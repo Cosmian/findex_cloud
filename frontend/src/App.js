@@ -32,7 +32,7 @@ function App() {
       keyPair.publicKey,
     ));
 
-    await fetch('http://localhost:8080/indexes', {
+    let response = await fetch('http://localhost:8080/indexes', {
       'method': 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -41,6 +41,8 @@ function App() {
         "public_key": hexEncode(new Uint8Array(exported)),
       }),
     });
+    let index = await response.json();
+    console.log(index);
 
     const exportedPrivateKey = new Uint8Array(await window.crypto.subtle.exportKey(
       "pkcs8",
@@ -49,7 +51,7 @@ function App() {
 
     const masterKeyAndPrivateKey = new Uint8Array([ ...randomBytes(16), ...exportedPrivateKey ]);
 
-    setToken(hexEncode(masterKeyAndPrivateKey));
+    setToken(index.public_id + hexEncode(masterKeyAndPrivateKey));
   };
 
   

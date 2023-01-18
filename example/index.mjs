@@ -2,9 +2,12 @@ import { Findex, FindexKey, hexDecode, hexEncode, Label, Location } from 'cloudp
 import { webcrypto } from 'crypto';
 let { upsert: rawUpsert, search: rawSearch } = await Findex();
 import axios from 'axios';
+import { decode } from 'punycode';
 
 
-await upsert("e80c934d8dc33717e8efa2cbe49097a43081b6020100301006072a8648ce3d020106052b8104002204819e30819b0201010430d3e1dea8b06dd7e49c91bbbd586f3a13052306a015760c52ab42b92cf7e90fd9c584515262381e063983a9a569353589a164036200040cd5450c6de7700efeae057b1f1a76095013b060c632621aa6fbc542fcff46217076e724343f9441cdc8a9859e99cbb8ca71460591f70f032772412a323e80887896c6c438542f084fe8671918653cef93314af99ebe96b63faf9a1405b17b72", [
+const token = "Oa4f04cad2ffd205143c4bbdb6d3148130f5a3081b6020100301006072a8648ce3d020106052b8104002204819e30819b02010104303ca7cf44f5c4da01ada316a309244434cce51860cdb6e048af789fb88bb915e442f792e1c3de955381a232fb1b492341a16403620004eca863af35b876fbfd42e534a25fe7890b752e0fcb2081a018b1b2a985d705a9c829b210fef2e9d0c7ed04717beac76b10413ae9d52472959fddefd47df615504af90aa78ad1ad6eef40cdaed5b50084d35354189c9ddfc1ffb470dd6847169d";
+
+await upsert(token, [
     {
         indexedValue: Location.fromNumber(42),
         keywords: [
@@ -12,13 +15,25 @@ await upsert("e80c934d8dc33717e8efa2cbe49097a43081b6020100301006072a8648ce3d0201
             "Dauce",
         ],
     },
+    {
+        indexedValue: Location.fromNumber(38),
+        keywords: [
+            "Alice",
+            "Dauce",
+        ],
+    },
 ])
 
+const response = await search(token, ["Dauce"]);
+
+console.log(response.locations());
+
 async function upsert(token, toUpsert) {
-    let tokenBytes = hexDecode(token);
-    let masterKey = tokenBytes.slice(0, 16);
-    let privateKeyAsPkcs8 = tokenBytes.slice(16);
-    let privateKey = await webcrypto.subtle.importKey(
+    const indexId = token.slice(0, 5);
+    const tokenBytes = hexDecode(token.slice(5));
+    const masterKey = tokenBytes.slice(0, 16);
+    const privateKeyAsPkcs8 = tokenBytes.slice(16);
+    const privateKey = await webcrypto.subtle.importKey(
         "pkcs8",
         privateKeyAsPkcs8,
         {
@@ -29,13 +44,13 @@ async function upsert(token, toUpsert) {
         ["sign"]
       );
 
-    let publicKey = new Uint8Array(await webcrypto.subtle.exportKey("raw", await getPublic(privateKey)));
+    const publicKey = new Uint8Array(await webcrypto.subtle.exportKey("raw", await getPublic(privateKey)));
 
     const api = axios.create({
         headers: {
             'X-Public-Key': hexEncode(publicKey),
         },
-        baseURL: 'http://127.0.0.1:8080'
+        baseURL: `http://127.0.0.1:8080/indexes/${indexId}`,
     });
       
 
@@ -44,17 +59,11 @@ async function upsert(token, toUpsert) {
         new FindexKey(masterKey),
         new Label("Some label"),
         async (uids) => {
-            console.log(uids);
-            const response = await api.post('/entries', uids.map((uid) => hexEncode(uid)))
-
-            console.log(response.status);
-            console.log(response.data);
-            return [];
-            return await response.json();
+            const response = await api.post('/fetch_entries', uids.map((uid) => hexEncode(uid)))
+            return response.data.map(({ uid, value }) => ({ uid: hexDecode(uid), value: hexDecode(value) }));
         },
         async (entriesToUpsert) => {
-            console.log(entriesToUpsert);
-            const response = await api.patch('/entries', 
+            const response = await api.post('/upsert_entries', 
                 entriesToUpsert.map(({ uid, oldValue, newValue }) => ({
                     uid: hexEncode(uid),
                     "old_value": oldValue ? hexEncode(oldValue) : null,
@@ -62,25 +71,56 @@ async function upsert(token, toUpsert) {
                 })),
             );
 
-            console.log(response.status);
-            console.log(response.data);
-            return [];
-            return await response.json();
+            return response.data.map(({ uid, value }) => ({ uid: hexDecode(uid), value: hexDecode(value) }));
         },
         async (chainsToInsert) => {
-            console.log(chainsToInsert)
-            const response = await api.patch('/chains', 
+            await api.post('/insert_chains', 
                 chainsToInsert.map(({ uid, value }) => ({
                     uid: hexEncode(uid),
                     value: hexEncode(value),
                 }))
             );
+        },
+    )
+}
 
-            console.log(response.status);
-            console.log(response.data);
-            return [];
-            return await response.json();
+async function search(token, query) {
+    const indexId = token.slice(0, 5);
+    const tokenBytes = hexDecode(token.slice(5));
+    const masterKey = tokenBytes.slice(0, 16);
+    const privateKeyAsPkcs8 = tokenBytes.slice(16);
+    const privateKey = await webcrypto.subtle.importKey(
+        "pkcs8",
+        privateKeyAsPkcs8,
+        {
+            name: "ECDSA",
+            namedCurve: "P-384"
+        },
+        true,
+        ["sign"]
+      );
 
+    const publicKey = new Uint8Array(await webcrypto.subtle.exportKey("raw", await getPublic(privateKey)));
+
+    const api = axios.create({
+        headers: {
+            'X-Public-Key': hexEncode(publicKey),
+        },
+        baseURL: `http://127.0.0.1:8080/indexes/${indexId}`,
+    });
+      
+
+    return rawSearch(
+        query,
+        new FindexKey(masterKey),
+        new Label("Some label"),
+        async (uids) => {
+            const response = await api.post('/fetch_entries', uids.map((uid) => hexEncode(uid)))
+            return response.data.map(({ uid, value }) => ({ uid: hexDecode(uid), value: hexDecode(value) }));
+        },
+        async (uids) => {
+            const response = await api.post('/fetch_chains', uids.map((uid) => hexEncode(uid)))
+            return response.data.map(({ uid, value }) => ({ uid: hexDecode(uid), value: hexDecode(value) }));
         },
     )
 }
