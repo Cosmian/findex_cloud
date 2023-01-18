@@ -54,7 +54,7 @@ async function upsert(token, toUpsert) {
     });
       
 
-    rawUpsert(
+    return await rawUpsert(
         toUpsert,
         new FindexKey(masterKey),
         new Label("Some label"),
@@ -110,7 +110,7 @@ async function search(token, query) {
     });
       
 
-    return rawSearch(
+    return await rawSearch(
         query,
         new FindexKey(masterKey),
         new Label("Some label"),
