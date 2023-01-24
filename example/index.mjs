@@ -2,7 +2,6 @@ import { Findex, FindexKey, hexDecode, hexEncode, Label, Location } from 'cloudp
 import { webcrypto } from 'crypto';
 let { upsert: rawUpsert, search: rawSearch } = await Findex();
 import axios from 'axios';
-import { decode } from 'punycode';
 
 
 const token = "Oa4f04cad2ffd205143c4bbdb6d3148130f5a3081b6020100301006072a8648ce3d020106052b8104002204819e30819b02010104303ca7cf44f5c4da01ada316a309244434cce51860cdb6e048af789fb88bb915e442f792e1c3de955381a232fb1b492341a16403620004eca863af35b876fbfd42e534a25fe7890b752e0fcb2081a018b1b2a985d705a9c829b210fef2e9d0c7ed04717beac76b10413ae9d52472959fddefd47df615504af90aa78ad1ad6eef40cdaed5b50084d35354189c9ddfc1ffb470dd6847169d";

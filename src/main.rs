@@ -1,18 +1,21 @@
 use actix_cors::Cors;
 use actix_web::{
-    patch, post,
+    post,
     web::{Data, Json, Path},
     App, HttpServer, Responder,
 };
+use base64::{engine::general_purpose, Engine};
 use env_logger::Env;
-use p384::ecdsa::VerifyingKey;
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
 
 #[derive(Deserialize)]
 struct PostIndexes {
-    public_key: String,
+    fetch_entries_key: String,
+    fetch_chains_key: String,
+    upsert_entries_key: String,
+    insert_chains_key: String,
 }
 
 struct Id {
@@ -23,16 +26,20 @@ struct Id {
 struct Index {
     id: i64,
     public_id: String,
-    public_key: Vec<u8>,
+    fetch_entries_key: Vec<u8>,
+    fetch_chains_key: Vec<u8>,
+    upsert_entries_key: Vec<u8>,
+    insert_chains_key: Vec<u8>,
 }
 
 #[post("/indexes")]
 async fn post_indexes(body: Json<PostIndexes>, pool: Data<SqlitePool>) -> impl Responder {
     let mut db = pool.acquire().await.unwrap();
 
-    let public_key = hex::decode(&body.public_key).unwrap();
-
-    let verifying_key = VerifyingKey::from_sec1_bytes(&public_key).expect("Cannot parse key");
+    let fetch_entries_key = hex::decode(&body.fetch_entries_key).unwrap();
+    let fetch_chains_key = hex::decode(&body.fetch_chains_key).unwrap();
+    let upsert_entries_key = hex::decode(&body.upsert_entries_key).unwrap();
+    let insert_chains_key = hex::decode(&body.insert_chains_key).unwrap();
 
     let public_id: String = rand::thread_rng()
         .sample_iter(&Alphanumeric)
@@ -42,9 +49,18 @@ async fn post_indexes(body: Json<PostIndexes>, pool: Data<SqlitePool>) -> impl R
 
     let Id { id } = sqlx::query_as!(
         Id,
-        r#"INSERT INTO indexes (public_id, public_key) VALUES ($1, $2) RETURNING id"#,
+        r#"INSERT INTO indexes (
+            public_id,
+            fetch_entries_key,
+            fetch_chains_key,
+            upsert_entries_key,
+            insert_chains_key
+        ) VALUES ($1, $2, $3, $4, $5) RETURNING id"#,
         public_id,
-        public_key,
+        fetch_entries_key,
+        fetch_chains_key,
+        upsert_entries_key,
+        insert_chains_key,
     )
     .fetch_one(&mut db)
     .await
