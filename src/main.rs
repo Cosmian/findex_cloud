@@ -4,19 +4,11 @@ use actix_web::{
     web::{Data, Json, Path},
     App, HttpServer, Responder,
 };
-use base64::{engine::general_purpose, Engine};
+use cosmian_crypto_core::CsRng;
 use env_logger::Env;
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distributions::Alphanumeric, Rng, RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
-
-#[derive(Deserialize)]
-struct PostIndexes {
-    fetch_entries_key: String,
-    fetch_chains_key: String,
-    upsert_entries_key: String,
-    insert_chains_key: String,
-}
 
 struct Id {
     id: i64,
@@ -33,13 +25,19 @@ struct Index {
 }
 
 #[post("/indexes")]
-async fn post_indexes(body: Json<PostIndexes>, pool: Data<SqlitePool>) -> impl Responder {
+async fn post_indexes(pool: Data<SqlitePool>) -> impl Responder {
     let mut db = pool.acquire().await.unwrap();
 
-    let fetch_entries_key = hex::decode(&body.fetch_entries_key).unwrap();
-    let fetch_chains_key = hex::decode(&body.fetch_chains_key).unwrap();
-    let upsert_entries_key = hex::decode(&body.upsert_entries_key).unwrap();
-    let insert_chains_key = hex::decode(&body.insert_chains_key).unwrap();
+    let mut rng = CsRng::from_entropy();
+
+    let mut fetch_entries_key = vec![0; 16];
+    rng.fill_bytes(&mut fetch_entries_key);
+    let mut fetch_chains_key = vec![0; 16];
+    rng.fill_bytes(&mut fetch_chains_key);
+    let mut upsert_entries_key = vec![0; 16];
+    rng.fill_bytes(&mut upsert_entries_key);
+    let mut insert_chains_key = vec![0; 16];
+    rng.fill_bytes(&mut insert_chains_key);
 
     let public_id: String = rand::thread_rng()
         .sample_iter(&Alphanumeric)
