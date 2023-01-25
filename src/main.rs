@@ -1,14 +1,15 @@
 use actix_cors::Cors;
 use actix_web::{
     post,
-    web::{Data, Json, Path},
-    App, HttpServer, Responder,
+    web::{Bytes, Data, Json, Path},
+    App, HttpRequest, HttpServer, Responder,
 };
 use cosmian_crypto_core::CsRng;
 use env_logger::Env;
 use rand::{distributions::Alphanumeric, Rng, RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
+use tiny_keccak::{Hasher, Kmac};
 
 struct Id {
     id: i64,
@@ -85,6 +86,33 @@ async fn post_indexes(pool: Data<SqlitePool>) -> impl Responder {
     Json(index)
 }
 
+fn check_signature(request: &HttpRequest, bytes: Bytes, key: &[u8]) {
+    let mut hasher = Kmac::v128(key, &[]);
+    let mut output = [0u8; 32];
+    hasher.update(&bytes);
+    hasher.finalize(&mut output);
+
+    if hex::encode(output)
+        != request
+            .headers()
+            .get("x-findex-cloud-signature")
+            .map(|header| header.to_str().unwrap())
+            .unwrap_or("")
+    {
+        dbg!(
+            output,
+            hex::encode(output),
+            request
+                .headers()
+                .get("x-findex-cloud-signature")
+                .map(|header| header.to_str().unwrap())
+                .unwrap_or("")
+        );
+
+        panic!("Invalid signature");
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct UidAndValue {
     uid: String,
@@ -92,12 +120,32 @@ struct UidAndValue {
 }
 
 #[post("/indexes/{public_id}/fetch_entries")]
-async fn fetch_entries(path: Path<String>, body: Json<Vec<String>>) -> impl Responder {
+async fn fetch_entries(
+    pool: Data<SqlitePool>,
+    path: Path<String>,
+    bytes: Bytes,
+    request: HttpRequest,
+) -> impl Responder {
+    let mut db = pool.acquire().await.unwrap();
+    let index = sqlx::query_as!(
+        Index,
+        r#"SELECT * FROM indexes WHERE public_id = $1"#,
+        *path
+    )
+    .fetch_one(&mut db)
+    .await
+    .unwrap();
+
+    let body_as_string = String::from_utf8(bytes.to_vec()).unwrap();
+    check_signature(&request, bytes, &index.fetch_entries_key);
+
     let index_pool = SqlitePoolOptions::new()
         .connect(&format!("sqlite://databases/{}.sqlite", *path))
         .await
         .expect("Cannot connect to the index database");
     let mut index_database = index_pool.acquire().await.unwrap();
+
+    let body: Vec<String> = serde_json::from_str(&body_as_string).unwrap();
 
     let commas = vec!["?"; body.len()].join(",");
     let sql = format!("SELECT * FROM entries WHERE uid IN ({commas})");
@@ -121,7 +169,27 @@ async fn fetch_entries(path: Path<String>, body: Json<Vec<String>>) -> impl Resp
 }
 
 #[post("/indexes/{public_id}/fetch_chains")]
-async fn fetch_chains(path: Path<String>, body: Json<Vec<String>>) -> impl Responder {
+async fn fetch_chains(
+    pool: Data<SqlitePool>,
+    path: Path<String>,
+    bytes: Bytes,
+    request: HttpRequest,
+) -> impl Responder {
+    let mut db = pool.acquire().await.unwrap();
+    let index = sqlx::query_as!(
+        Index,
+        r#"SELECT * FROM indexes WHERE public_id = $1"#,
+        *path
+    )
+    .fetch_one(&mut db)
+    .await
+    .unwrap();
+
+    let body_as_string = String::from_utf8(bytes.to_vec()).unwrap();
+    check_signature(&request, bytes, &index.fetch_chains_key);
+
+    let body: Vec<String> = serde_json::from_str(&body_as_string).unwrap();
+
     let index_pool = SqlitePoolOptions::new()
         .connect(&format!("sqlite://databases/{}.sqlite", *path))
         .await
@@ -158,14 +226,31 @@ struct UidAndOldAndNewValues {
 
 #[post("/indexes/{public_id}/upsert_entries")]
 async fn upsert_entries(
+    pool: Data<SqlitePool>,
     path: Path<String>,
-    body: Json<Vec<UidAndOldAndNewValues>>,
+    bytes: Bytes,
+    request: HttpRequest,
 ) -> impl Responder {
+    let mut db = pool.acquire().await.unwrap();
+    let index = sqlx::query_as!(
+        Index,
+        r#"SELECT * FROM indexes WHERE public_id = $1"#,
+        *path
+    )
+    .fetch_one(&mut db)
+    .await
+    .unwrap();
+
+    let body_as_string = String::from_utf8(bytes.to_vec()).unwrap();
+    check_signature(&request, bytes, &index.upsert_entries_key);
+
     let index_pool = SqlitePoolOptions::new()
         .connect(&format!("sqlite://databases/{}.sqlite", *path))
         .await
         .expect("Cannot connect to the index database");
     let mut index_database = index_pool.acquire().await.unwrap();
+
+    let body: Vec<UidAndOldAndNewValues> = serde_json::from_str(&body_as_string).unwrap();
 
     let sql = format!("INSERT INTO entries (uid, value) VALUES (?, ?) ON CONFLICT (uid)  DO UPDATE SET value = ? WHERE value = ?");
     let mut rejected = vec![];
@@ -203,12 +288,31 @@ async fn upsert_entries(
 }
 
 #[post("/indexes/{public_id}/insert_chains")]
-async fn insert_chains(path: Path<String>, body: Json<Vec<UidAndValue>>) -> impl Responder {
+async fn insert_chains(
+    pool: Data<SqlitePool>,
+    path: Path<String>,
+    bytes: Bytes,
+    request: HttpRequest,
+) -> impl Responder {
+    let mut db = pool.acquire().await.unwrap();
+    let index = sqlx::query_as!(
+        Index,
+        r#"SELECT * FROM indexes WHERE public_id = $1"#,
+        *path
+    )
+    .fetch_one(&mut db)
+    .await
+    .unwrap();
+
+    let body_as_string = String::from_utf8(bytes.to_vec()).unwrap();
+    check_signature(&request, bytes, &index.insert_chains_key);
+
     let index_pool = SqlitePoolOptions::new()
         .connect(&format!("sqlite://databases/{}.sqlite", *path))
         .await
         .expect("Cannot connect to the index database");
     let mut index_database = index_pool.acquire().await.unwrap();
+    let body: Vec<UidAndValue> = serde_json::from_str(&body_as_string).unwrap();
 
     let sql = format!("INSERT OR REPLACE INTO chains (uid, value) VALUES(?, ?)");
 
