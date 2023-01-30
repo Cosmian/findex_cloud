@@ -21,6 +21,7 @@ pub enum Error {
     WrongEncoding,
     Json,
     Hex,
+    WrongIndexPublicId,
 }
 
 impl Display for Error {
@@ -49,6 +50,7 @@ impl ResponseError for Error {
             Self::WrongEncoding => StatusCode::BAD_REQUEST,
             Self::Json => StatusCode::BAD_REQUEST,
             Self::Hex => StatusCode::BAD_REQUEST,
+            Self::WrongIndexPublicId => StatusCode::BAD_REQUEST,
         }
     }
 }
