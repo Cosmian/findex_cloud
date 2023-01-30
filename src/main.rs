@@ -139,24 +139,19 @@ async fn upsert_entries(
     let body: Vec<UidAndOldAndNewValues> =
         parse_body_with_signature(&request, bytes, &index.upsert_entries_key)?;
 
-    let sql = "INSERT INTO entries (index_id, uid, value) VALUES (?, ?, ?) ON CONFLICT (index_id, uid)  DO UPDATE SET value = ? WHERE value = ?";
     let mut rejected = vec![];
 
     for info in &*body {
-        let mut query = sqlx::query(sql);
-        query = query.bind(index.id);
-        query = query.bind(hex::decode(&info.uid)?);
-        query = query.bind(hex::decode(&info.new_value)?);
-        query = query.bind(hex::decode(&info.new_value)?);
-        query = query.bind(
-            info.old_value
-                .clone()
-                .map(|old_value| hex::decode(old_value))
-                .map_or(Ok(None), |v| v.map(Some))? // option<result> to result<option>
-                .unwrap_or_default(),
-        );
+        let uid = hex::decode(&info.uid)?;
+        let new_value = hex::decode(&info.new_value)?;
+        let old_value = info
+            .old_value
+            .as_ref()
+            .map(hex::decode)
+            .map_or(Ok(None), |v| v.map(Some))? // option<result> to result<option>
+            .unwrap_or_default();
 
-        let results = query.execute(&mut db).await?;
+        let results = sqlx::query!("INSERT INTO entries (index_id, uid, value) VALUES (?, ?, ?) ON CONFLICT (index_id, uid)  DO UPDATE SET value = ? WHERE value = ?", index.id, uid, new_value, new_value, old_value).execute(&mut db).await?;
 
         if results.rows_affected() == 0 {
             let uid_bytes = hex::decode(&info.uid)?;
@@ -191,15 +186,17 @@ async fn insert_chains(
     let body: Vec<UidAndValue> =
         parse_body_with_signature(&request, bytes, &index.insert_chains_key)?;
 
-    let sql = "INSERT OR REPLACE INTO chains (index_id, uid, value) VALUES(?, ?, ?)";
-
     for info in &*body {
-        let mut query = sqlx::query(sql);
-        query = query.bind(index.id);
-        query = query.bind(hex::decode(&info.uid)?);
-        query = query.bind(hex::decode(&info.value)?);
-
-        query.execute(&mut db).await?;
+        let uid = hex::decode(&info.uid)?;
+        let value = hex::decode(&info.value)?;
+        sqlx::query!(
+            "INSERT OR REPLACE INTO chains (index_id, uid, value) VALUES(?, ?, ?)",
+            index.id,
+            uid,
+            value,
+        )
+        .execute(&mut db)
+        .await?;
     }
 
     Ok(Json(()))
