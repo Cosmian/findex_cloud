@@ -70,19 +70,6 @@ async fn post_indexes(pool: Data<SqlitePool>) -> impl Responder {
         .await
         .unwrap();
 
-    std::fs::File::create(&format!("databases/{}.sqlite", index.public_id))
-        .expect("Cannot create database file");
-
-    let index_database = SqlitePoolOptions::new()
-        .connect(&format!("sqlite://databases/{}.sqlite", index.public_id))
-        .await
-        .expect("Cannot connect to the index database");
-
-    sqlx::migrate!("./migrations_index")
-        .run(&index_database)
-        .await
-        .expect("Cannot run the database migrations on index database");
-
     Json(index)
 }
 
@@ -139,23 +126,17 @@ async fn fetch_entries(
     let body_as_string = String::from_utf8(bytes.to_vec()).unwrap();
     check_signature(&request, bytes, &index.fetch_entries_key);
 
-    let index_pool = SqlitePoolOptions::new()
-        .connect(&format!("sqlite://databases/{}.sqlite", *path))
-        .await
-        .expect("Cannot connect to the index database");
-    let mut index_database = index_pool.acquire().await.unwrap();
-
     let body: Vec<String> = serde_json::from_str(&body_as_string).unwrap();
 
     let commas = vec!["?"; body.len()].join(",");
-    let sql = format!("SELECT * FROM entries WHERE uid IN ({commas})");
-    let mut query = sqlx::query(&sql);
+    let sql = format!("SELECT * FROM entries WHERE index_id = ? AND uid IN ({commas})");
+    let mut query = sqlx::query(&sql).bind(index.id);
 
     for uid in &*body {
         query = query.bind(hex::decode(uid).unwrap());
     }
 
-    let rows = query.fetch_all(&mut index_database).await.unwrap();
+    let rows = query.fetch_all(&mut db).await.unwrap();
 
     let uids_and_values: Vec<_> = rows
         .into_iter()
@@ -190,21 +171,15 @@ async fn fetch_chains(
 
     let body: Vec<String> = serde_json::from_str(&body_as_string).unwrap();
 
-    let index_pool = SqlitePoolOptions::new()
-        .connect(&format!("sqlite://databases/{}.sqlite", *path))
-        .await
-        .expect("Cannot connect to the index database");
-    let mut index_database = index_pool.acquire().await.unwrap();
-
     let commas = vec!["?"; body.len()].join(",");
-    let sql = format!("SELECT * FROM chains WHERE uid IN ({commas})");
-    let mut query = sqlx::query(&sql);
+    let sql = format!("SELECT * FROM chains WHERE index_id = ? AND uid IN ({commas})");
+    let mut query = sqlx::query(&sql).bind(index.id);
 
     for uid in &*body {
         query = query.bind(hex::decode(uid).unwrap());
     }
 
-    let rows = query.fetch_all(&mut index_database).await.unwrap();
+    let rows = query.fetch_all(&mut db).await.unwrap();
 
     let uids_and_values: Vec<_> = rows
         .into_iter()
@@ -244,19 +219,14 @@ async fn upsert_entries(
     let body_as_string = String::from_utf8(bytes.to_vec()).unwrap();
     check_signature(&request, bytes, &index.upsert_entries_key);
 
-    let index_pool = SqlitePoolOptions::new()
-        .connect(&format!("sqlite://databases/{}.sqlite", *path))
-        .await
-        .expect("Cannot connect to the index database");
-    let mut index_database = index_pool.acquire().await.unwrap();
-
     let body: Vec<UidAndOldAndNewValues> = serde_json::from_str(&body_as_string).unwrap();
 
-    let sql = format!("INSERT INTO entries (uid, value) VALUES (?, ?) ON CONFLICT (uid)  DO UPDATE SET value = ? WHERE value = ?");
+    let sql = format!("INSERT INTO entries (index_id, uid, value) VALUES (?, ?, ?) ON CONFLICT (index_id, uid)  DO UPDATE SET value = ? WHERE value = ?");
     let mut rejected = vec![];
 
     for info in &*body {
         let mut query = sqlx::query(&sql);
+        query = query.bind(index.id);
         query = query.bind(hex::decode(&info.uid).unwrap());
         query = query.bind(hex::decode(&info.new_value).unwrap());
         query = query.bind(hex::decode(&info.new_value).unwrap());
@@ -267,19 +237,23 @@ async fn upsert_entries(
                 .unwrap_or(vec![]),
         );
 
-        let results = query.execute(&mut index_database).await.unwrap();
+        let results = query.execute(&mut db).await.unwrap();
 
         if results.rows_affected() == 0 {
-            let sql = format!("SELECT * FROM entries WHERE uid = ?");
-            let new_value = sqlx::query(&sql)
-                .bind(hex::decode(&info.uid).unwrap())
-                .fetch_one(&mut index_database)
-                .await
-                .unwrap();
+            let uid_bytes = hex::decode(&info.uid).unwrap();
+
+            let new_value = sqlx::query!(
+                "SELECT * FROM entries WHERE index_id = ? AND uid = ?",
+                index.id,
+                uid_bytes,
+            )
+            .fetch_one(&mut db)
+            .await
+            .unwrap();
 
             rejected.push(UidAndValue {
-                uid: hex::encode::<Vec<u8>>(new_value.get("uid")),
-                value: hex::encode::<Vec<u8>>(new_value.get("value")),
+                uid: hex::encode::<Vec<u8>>(new_value.uid),
+                value: hex::encode::<Vec<u8>>(new_value.value),
             });
         }
     }
@@ -306,22 +280,17 @@ async fn insert_chains(
 
     let body_as_string = String::from_utf8(bytes.to_vec()).unwrap();
     check_signature(&request, bytes, &index.insert_chains_key);
-
-    let index_pool = SqlitePoolOptions::new()
-        .connect(&format!("sqlite://databases/{}.sqlite", *path))
-        .await
-        .expect("Cannot connect to the index database");
-    let mut index_database = index_pool.acquire().await.unwrap();
     let body: Vec<UidAndValue> = serde_json::from_str(&body_as_string).unwrap();
 
-    let sql = format!("INSERT OR REPLACE INTO chains (uid, value) VALUES(?, ?)");
+    let sql = format!("INSERT OR REPLACE INTO chains (index_id, uid, value) VALUES(?, ?, ?)");
 
     for info in &*body {
         let mut query = sqlx::query(&sql);
+        query = query.bind(index.id);
         query = query.bind(hex::decode(&info.uid).unwrap());
         query = query.bind(hex::decode(&info.value).unwrap());
 
-        query.execute(&mut index_database).await.unwrap();
+        query.execute(&mut db).await.unwrap();
     }
 
     ""
