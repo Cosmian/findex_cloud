@@ -273,6 +273,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-recursion"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b015a331cc64ebd1774ba119538573603427eaace0a1950c423ab971f903796"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "atoi"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -453,6 +464,24 @@ dependencies = [
  "serde",
  "sha3",
  "thiserror",
+ "zeroize",
+]
+
+[[package]]
+name = "cosmian_findex"
+version = "2.0.0"
+dependencies = [
+ "async-recursion",
+ "base64 0.13.1",
+ "cosmian_crypto_core",
+ "futures",
+ "hex",
+ "leb128",
+ "rand",
+ "serde",
+ "sha3",
+ "thiserror",
+ "tiny-keccak",
  "zeroize",
 ]
 
@@ -727,6 +756,7 @@ dependencies = [
  "actix-web",
  "base64 0.21.0",
  "cosmian_crypto_core",
+ "cosmian_findex",
  "env_logger",
  "hex",
  "p384",
@@ -790,6 +820,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "futures"
+version = "0.3.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38390104763dc37a5145a53c29c63c1290b5d316d6086ec32c293f6736051bb0"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "futures-executor",
+ "futures-io",
+ "futures-sink",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -828,6 +873,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "futures-io"
+version = "0.3.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfb8371b6fb2aeb2d280374607aeabfc99d95c72edfe51692e42d3d7f0d08531"
+
+[[package]]
+name = "futures-macro"
+version = "0.3.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdfb8ce053d86b91919aad980c220b1fb8401a9394410e1c289ed7e66b61835d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "futures-sink"
 version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -845,9 +907,13 @@ version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "197676987abd2f9cadff84926f410af1c183608d36641465df73ae8211dc65d6"
 dependencies = [
+ "futures-channel",
  "futures-core",
+ "futures-io",
+ "futures-macro",
  "futures-sink",
  "futures-task",
+ "memchr",
  "pin-project-lite",
  "pin-utils",
  "slab",

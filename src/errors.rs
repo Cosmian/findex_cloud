@@ -9,10 +9,12 @@ use actix_web::{
     web::Json,
     HttpResponse,
 };
+use cosmian_findex::error::FindexErr;
 use hex::FromHexError;
 use serde::Serialize;
 
 pub type Response<T> = Result<Json<T>, Error>;
+pub type ResponseBytes = Result<HttpResponse, Error>;
 
 #[derive(Debug, Serialize)]
 pub enum Error {
@@ -22,6 +24,7 @@ pub enum Error {
     Json,
     Hex,
     WrongIndexPublicId,
+    Findex(String),
 }
 
 impl Display for Error {
@@ -51,6 +54,7 @@ impl ResponseError for Error {
             Self::Json => StatusCode::BAD_REQUEST,
             Self::Hex => StatusCode::BAD_REQUEST,
             Self::WrongIndexPublicId => StatusCode::BAD_REQUEST,
+            Self::Findex(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -76,5 +80,11 @@ impl From<FromUtf8Error> for Error {
 impl From<FromHexError> for Error {
     fn from(_: FromHexError) -> Self {
         Error::Hex
+    }
+}
+
+impl From<FindexErr> for Error {
+    fn from(err: FindexErr) -> Self {
+        Error::Findex(err.to_string())
     }
 }

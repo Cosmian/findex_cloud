@@ -5,6 +5,7 @@ import { Button, DescriptionText, RoundedFrame, CosmianLogo } from "cosmian_ui";
 import { FindexCloud, Location } from "cloudproof_js";
 
 import "cosmian_ui/style.css";
+import { Label } from "cloudproof_js";
 
 function App() {
   const [findexCloud, setFindexCloud] = useState(null);
@@ -32,23 +33,33 @@ function App() {
   };
 
   const seedIndex = async () => {
-    await findexCloud.upsert(token, [
-      {
-        indexedValue: Location.fromNumber(42),
-        keywords: ["Thibaud", "Dauce"],
-      },
-      {
-        indexedValue: Location.fromNumber(38),
-        keywords: ["Alice", "Dauce"],
-      },
-    ]);
+    await findexCloud.upsert(
+      findexCloud.tokenToString(token),
+      Label.fromString("blah"),
+      [
+        {
+          indexedValue: Location.fromNumber(42),
+          keywords: ["Thibaud", "Dauce"],
+        },
+        {
+          indexedValue: Location.fromNumber(38),
+          keywords: ["Alice", "Dauce"],
+        },
+      ]
+    );
 
     setSeeded(true);
   };
 
   const search = async () => {
     console.log(
-      (await findexCloud.search(token, ["Dauce"]))
+      (
+        await findexCloud.search(
+          findexCloud.tokenToString(token),
+          Label.fromString("blah"),
+          ["Dauce"]
+        )
+      )
         .locations()
         .map((location) => location.toNumber())
     );

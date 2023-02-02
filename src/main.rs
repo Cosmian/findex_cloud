@@ -1,18 +1,21 @@
+use crate::{
+    core::{check_body_signature, Id, Index},
+    errors::{Response, ResponseBytes},
+};
 use actix_cors::Cors;
 use actix_web::{
     post,
     web::{Bytes, Data, Json},
-    App, HttpRequest, HttpServer,
+    App, HttpRequest, HttpResponse, HttpServer,
 };
-use cosmian_crypto_core::CsRng;
+use cosmian_crypto_core::{bytes_ser_de::Serializable, CsRng};
+use cosmian_findex::{
+    core::{EncryptedTable, Uid, UpsertData},
+    interfaces::{generic_parameters::UID_LENGTH, ser_de::deserialize_set},
+};
 use env_logger::Env;
 use rand::{distributions::Alphanumeric, Rng, RngCore, SeedableRng};
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
-
-use crate::{
-    core::{parse_body_with_signature, Id, Index, UidAndOldAndNewValues, UidAndValue},
-    errors::Response,
-};
 
 mod core;
 mod errors;
@@ -69,30 +72,37 @@ async fn fetch_entries(
     index: Index,
     bytes: Bytes,
     request: HttpRequest,
-) -> Response<Vec<UidAndValue>> {
+) -> ResponseBytes {
     let mut db = pool.acquire().await?;
 
-    let body: Vec<String> = parse_body_with_signature(&request, bytes, &index.fetch_entries_key)?;
+    check_body_signature(&request, &bytes, &index.fetch_entries_key)?;
+    let body = deserialize_set::<Uid<UID_LENGTH>>(&bytes)?;
 
     let commas = vec!["?"; body.len()].join(",");
     let sql = format!("SELECT * FROM entries WHERE index_id = ? AND uid IN ({commas})");
     let mut query = sqlx::query(&sql).bind(index.id);
 
-    for uid in &*body {
-        query = query.bind(hex::decode(uid)?);
+    for uid in &body {
+        query = query.bind(uid.as_ref());
     }
 
     let rows = query.fetch_all(&mut db).await?;
 
-    let uids_and_values: Vec<_> = rows
+    let uids_and_values: EncryptedTable<UID_LENGTH> = rows
         .into_iter()
-        .map(|row| UidAndValue {
-            uid: hex::encode::<Vec<u8>>(row.get("uid")),
-            value: hex::encode::<Vec<u8>>(row.get("value")),
+        .map(|row| {
+            (
+                Uid::<UID_LENGTH>::try_from_bytes(row.get("uid")).unwrap(),
+                row.get("value"),
+            )
         })
         .collect();
 
-    Ok(Json(uids_and_values))
+    dbg!(&uids_and_values);
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/octet-stream")
+        .body(uids_and_values.try_to_bytes()?))
 }
 
 #[post("/indexes/{public_id}/fetch_chains")]
@@ -101,30 +111,37 @@ async fn fetch_chains(
     index: Index,
     bytes: Bytes,
     request: HttpRequest,
-) -> Response<Vec<UidAndValue>> {
+) -> ResponseBytes {
     let mut db = pool.acquire().await?;
 
-    let body: Vec<String> = parse_body_with_signature(&request, bytes, &index.fetch_chains_key)?;
+    check_body_signature(&request, &bytes, &index.fetch_chains_key)?;
+    let body = deserialize_set::<Uid<UID_LENGTH>>(&bytes)?;
 
     let commas = vec!["?"; body.len()].join(",");
     let sql = format!("SELECT * FROM chains WHERE index_id = ? AND uid IN ({commas})");
     let mut query = sqlx::query(&sql).bind(index.id);
 
-    for uid in &*body {
-        query = query.bind(hex::decode(uid)?);
+    for uid in &body {
+        query = query.bind(uid.as_ref());
     }
 
     let rows = query.fetch_all(&mut db).await?;
 
-    let uids_and_values: Vec<_> = rows
+    let uids_and_values: EncryptedTable<UID_LENGTH> = rows
         .into_iter()
-        .map(|row| UidAndValue {
-            uid: hex::encode::<Vec<u8>>(row.get("uid")),
-            value: hex::encode::<Vec<u8>>(row.get("value")),
+        .map(|row| {
+            (
+                Uid::<UID_LENGTH>::try_from_bytes(row.get("uid")).unwrap(),
+                row.get("value"),
+            )
         })
         .collect();
 
-    Ok(Json(uids_and_values))
+    dbg!(&uids_and_values);
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/octet-stream")
+        .body(uids_and_values.try_to_bytes()?))
 }
 
 #[post("/indexes/{public_id}/upsert_entries")]
@@ -133,29 +150,19 @@ async fn upsert_entries(
     bytes: Bytes,
     request: HttpRequest,
     index: Index,
-) -> Response<Vec<UidAndValue>> {
+) -> ResponseBytes {
     let mut db = pool.acquire().await?;
 
-    let body: Vec<UidAndOldAndNewValues> =
-        parse_body_with_signature(&request, bytes, &index.upsert_entries_key)?;
+    check_body_signature(&request, &bytes, &index.upsert_entries_key)?;
+    let body = UpsertData::<UID_LENGTH>::try_from_bytes(&bytes)?;
 
-    let mut rejected = vec![];
+    let mut rejected = EncryptedTable::with_capacity(1);
 
-    for info in &*body {
-        let uid = hex::decode(&info.uid)?;
-        let new_value = hex::decode(&info.new_value)?;
-        let old_value = info
-            .old_value
-            .as_ref()
-            .map(hex::decode)
-            .map_or(Ok(None), |v| v.map(Some))? // option<result> to result<option>
-            .unwrap_or_default();
-
-        let results = sqlx::query!("INSERT INTO entries (index_id, uid, value) VALUES (?, ?, ?) ON CONFLICT (index_id, uid)  DO UPDATE SET value = ? WHERE value = ?", index.id, uid, new_value, new_value, old_value).execute(&mut db).await?;
+    for (uid, (old_value, new_value)) in body.iter() {
+        let uid_bytes = uid.as_ref();
+        let results = sqlx::query!("INSERT INTO entries (index_id, uid, value) VALUES (?, ?, ?) ON CONFLICT (index_id, uid)  DO UPDATE SET value = ? WHERE value = ?", index.id, uid_bytes, new_value, new_value, old_value).execute(&mut db).await?;
 
         if results.rows_affected() == 0 {
-            let uid_bytes = hex::decode(&info.uid)?;
-
             let new_value = sqlx::query!(
                 "SELECT * FROM entries WHERE index_id = ? AND uid = ?",
                 index.id,
@@ -164,14 +171,16 @@ async fn upsert_entries(
             .fetch_one(&mut db)
             .await?;
 
-            rejected.push(UidAndValue {
-                uid: hex::encode::<Vec<u8>>(new_value.uid),
-                value: hex::encode::<Vec<u8>>(new_value.value),
-            });
+            rejected.insert(
+                Uid::<UID_LENGTH>::try_from_bytes(&new_value.uid).unwrap(),
+                new_value.value,
+            );
         }
     }
 
-    Ok(Json(rejected))
+    Ok(HttpResponse::Ok()
+        .content_type("application/octet-stream")
+        .body(rejected.try_to_bytes()?))
 }
 
 #[post("/indexes/{public_id}/insert_chains")]
@@ -183,16 +192,15 @@ async fn insert_chains(
 ) -> Response<()> {
     let mut db = pool.acquire().await?;
 
-    let body: Vec<UidAndValue> =
-        parse_body_with_signature(&request, bytes, &index.insert_chains_key)?;
+    check_body_signature(&request, &bytes, &index.insert_chains_key)?;
+    let body = EncryptedTable::<UID_LENGTH>::try_from_bytes(&bytes)?;
 
-    for info in &*body {
-        let uid = hex::decode(&info.uid)?;
-        let value = hex::decode(&info.value)?;
+    for (uid, value) in body.iter() {
+        let uid_bytes = uid.as_ref();
         sqlx::query!(
             "INSERT OR REPLACE INTO chains (index_id, uid, value) VALUES(?, ?, ?)",
             index.id,
-            uid,
+            uid_bytes,
             value,
         )
         .execute(&mut db)

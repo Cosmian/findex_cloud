@@ -10,6 +10,7 @@ actix-cors = "0.6.4"
 actix-web = "4.2.1"
 base64 = "0.21.0"
 cosmian_crypto_core = "6.0.0"
+cosmian_findex = { path = "../findex", features = ["interfaces", "serde"] }
 env_logger = "0.10.0"
 hex = "0.4.3"
 p384 = { version = "0.11.2", features = ["serde"] }

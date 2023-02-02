@@ -5,7 +5,7 @@ use actix_web::{
     web::{Bytes, Data, Path},
     FromRequest, HttpRequest,
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tiny_keccak::{Hasher, Kmac};
 
@@ -38,14 +38,14 @@ pub(crate) struct UidAndOldAndNewValues {
     pub(crate) new_value: String,
 }
 
-pub(crate) fn parse_body_with_signature<T: DeserializeOwned>(
+pub(crate) fn check_body_signature(
     request: &HttpRequest,
-    bytes: Bytes,
+    bytes: &Bytes,
     key: &[u8],
-) -> Result<T, Error> {
+) -> Result<(), Error> {
     let mut hasher = Kmac::v128(key, &[]);
     let mut output = [0u8; 32];
-    hasher.update(&bytes);
+    hasher.update(bytes);
     hasher.finalize(&mut output);
 
     if hex::encode(output)
@@ -58,8 +58,7 @@ pub(crate) fn parse_body_with_signature<T: DeserializeOwned>(
         return Err(Error::InvalidSignature);
     }
 
-    let body_as_string = String::from_utf8(bytes.to_vec())?;
-    Ok(serde_json::from_str(&body_as_string)?)
+    Ok(())
 }
 
 impl FromRequest for Index {
