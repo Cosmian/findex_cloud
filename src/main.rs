@@ -1,11 +1,12 @@
 use crate::{
-    core::{check_body_signature, Id, Index},
-    errors::{Response, ResponseBytes},
+    auth0::{Auth, Auth0},
+    core::{check_body_signature, Backend, BackendProject, Id, Index},
+    errors::{Error, Response, ResponseBytes},
 };
 use actix_cors::Cors;
 use actix_web::{
-    post,
-    web::{Bytes, Data, Json},
+    get, post,
+    web::{Bytes, Data, Json, Path},
     App, HttpRequest, HttpResponse, HttpServer,
 };
 use cosmian_crypto_core::{bytes_ser_de::Serializable, CsRng};
@@ -17,13 +18,32 @@ use env_logger::Env;
 use rand::{distributions::Alphanumeric, Rng, RngCore, SeedableRng};
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
 
+mod auth0;
 mod core;
 mod errors;
 
-#[post("/indexes")]
-async fn post_indexes(pool: Data<SqlitePool>) -> Response<Index> {
-    let mut db = pool.acquire().await?;
+#[post("/projects/{project_uuid}/indexes")]
+async fn post_indexes(
+    pool: Data<SqlitePool>,
+    backend: Data<Backend>,
+    auth: Auth,
+    project_uuid: Path<String>,
+) -> Response<Index> {
+    let projects: Vec<BackendProject> = reqwest::Client::new()
+        .get(&format!("https://{}/projects", backend.domain))
+        .bearer_auth(auth.bearer)
+        .send()
+        .await?
+        .json()
+        .await?;
 
+    if !projects.contains(&BackendProject {
+        uuid: project_uuid.clone(),
+    }) {
+        return Err(Error::UnknownProject(project_uuid.clone()));
+    }
+
+    let mut db = pool.acquire().await?;
     let mut rng = CsRng::from_entropy();
 
     let mut fetch_entries_key = vec![0; 16];
@@ -44,12 +64,16 @@ async fn post_indexes(pool: Data<SqlitePool>) -> Response<Index> {
     let Id { id } = sqlx::query_as!(
         Id,
         r#"INSERT INTO indexes (
+            authz_id,
+            project_uuid,
             public_id,
             fetch_entries_key,
             fetch_chains_key,
             upsert_entries_key,
             insert_chains_key
-        ) VALUES ($1, $2, $3, $4, $5) RETURNING id"#,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id"#,
+        auth.authz_id,
+        *project_uuid,
         public_id,
         fetch_entries_key,
         fetch_chains_key,
@@ -64,6 +88,40 @@ async fn post_indexes(pool: Data<SqlitePool>) -> Response<Index> {
         .await?;
 
     Ok(Json(index))
+}
+
+#[get("/projects/{project_uuid}/indexes")]
+async fn get_indexes(
+    pool: Data<SqlitePool>,
+    backend: Data<Backend>,
+    auth: Auth,
+    project_uuid: Path<String>,
+) -> Response<Vec<Index>> {
+    let projects: Vec<BackendProject> = reqwest::Client::new()
+        .get(&format!("https://{}/projects", backend.domain))
+        .bearer_auth(auth.bearer)
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    if !projects.contains(&BackendProject {
+        uuid: project_uuid.clone(),
+    }) {
+        return Err(Error::UnknownProject(project_uuid.clone()));
+    }
+
+    let mut db = pool.acquire().await?;
+
+    let indexes = sqlx::query_as!(
+        Index,
+        r#"SELECT * FROM indexes WHERE project_uuid = $1"#,
+        *project_uuid,
+    )
+    .fetch_all(&mut db)
+    .await?;
+
+    Ok(Json(indexes))
 }
 
 #[post("/indexes/{public_id}/fetch_entries")]
@@ -97,8 +155,6 @@ async fn fetch_entries(
             )
         })
         .collect();
-
-    dbg!(&uids_and_values);
 
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
@@ -136,8 +192,6 @@ async fn fetch_chains(
             )
         })
         .collect();
-
-    dbg!(&uids_and_values);
 
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
@@ -223,11 +277,19 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Cannot run the database migrations");
 
+    // Configure auth0
+    let auth0 = Data::new(Auth0::from_env());
+
+    // Configure auth0
+    let backend = Data::new(Backend::from_env());
+
     let database_pool = Data::new(pool.clone());
     HttpServer::new(move || {
         App::new()
             .wrap(Cors::permissive())
             .app_data(database_pool.clone())
+            .app_data(backend.clone())
+            .app_data(auth0.clone())
             .service(post_indexes)
             .service(fetch_entries)
             .service(fetch_chains)

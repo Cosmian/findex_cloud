@@ -9,14 +9,18 @@ use actix_web::{
     web::Json,
     HttpResponse,
 };
+use actix_web_httpauth::{
+    extractors::AuthenticationError, headers::www_authenticate::bearer::Bearer,
+};
+use alcoholic_jwt::ValidationError;
 use cosmian_findex::error::FindexErr;
 use hex::FromHexError;
-use serde::Serialize;
+use reqwest::header::InvalidHeaderValue;
 
 pub type Response<T> = Result<Json<T>, Error>;
 pub type ResponseBytes = Result<HttpResponse, Error>;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub enum Error {
     Internal,
     InvalidSignature,
@@ -25,15 +29,30 @@ pub enum Error {
     Hex,
     WrongIndexPublicId,
     Findex(String),
+
+    InvalidConfiguration,
+
+    CannotFetchJwks(reqwest::Error),
+    CannotFetchJwksResponse(reqwest::Error),
+
+    JwksNoKid,
+    JwksValidationError(ValidationError),
+    TokenKidNotFoundInJwksKeysSet,
+    MissingSubInJwtToken,
+    InvalidSubInJwtToken,
+    TokenExpired,
+
+    FailToBuildBearerHeader(InvalidHeaderValue),
+    BearerError(AuthenticationError<Bearer>),
+
+    UnknownProject(String),
+
+    Reqwest(reqwest::Error),
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "{}",
-            serde_json::to_string(self).map_err(|_| core::fmt::Error)?
-        )?;
+        write!(f, "{self:?}")?;
 
         Ok(())
     }
@@ -55,6 +74,24 @@ impl ResponseError for Error {
             Self::Hex => StatusCode::BAD_REQUEST,
             Self::WrongIndexPublicId => StatusCode::BAD_REQUEST,
             Self::Findex(_) => StatusCode::BAD_REQUEST,
+
+            Self::InvalidConfiguration => StatusCode::INTERNAL_SERVER_ERROR,
+
+            Self::CannotFetchJwks(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::CannotFetchJwksResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
+
+            Self::JwksNoKid => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::JwksValidationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::TokenKidNotFoundInJwksKeysSet => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::MissingSubInJwtToken => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidSubInJwtToken => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::TokenExpired => StatusCode::FORBIDDEN,
+
+            Self::FailToBuildBearerHeader(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::BearerError(_) => StatusCode::FORBIDDEN,
+
+            Self::UnknownProject(_) => StatusCode::NOT_FOUND,
+            Self::Reqwest(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -86,5 +123,23 @@ impl From<FromHexError> for Error {
 impl From<FindexErr> for Error {
     fn from(err: FindexErr) -> Self {
         Error::Findex(err.to_string())
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(err: reqwest::Error) -> Self {
+        Error::Reqwest(err)
+    }
+}
+
+impl From<InvalidHeaderValue> for Error {
+    fn from(err: InvalidHeaderValue) -> Self {
+        Error::FailToBuildBearerHeader(err)
+    }
+}
+
+impl From<AuthenticationError<Bearer>> for Error {
+    fn from(err: AuthenticationError<Bearer>) -> Self {
+        Error::BearerError(err)
     }
 }

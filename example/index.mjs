@@ -13,6 +13,8 @@ const token =
 const start = new Date();
 const NUMBER_OF_ITERATION = 100;
 
+console.log(Label.fromString("blah").bytes);
+
 await upsert(token, Label.fromString("blah"), [
   {
     indexedValue: Location.fromNumber(42),

@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin};
+use std::{env, future::Future, pin::Pin};
 
 use actix_web::{
     dev::Payload,
@@ -18,6 +18,8 @@ pub(crate) struct Id {
 #[derive(Serialize)]
 pub(crate) struct Index {
     pub(crate) id: i64,
+    pub(crate) authz_id: String,
+    pub(crate) project_uuid: String,
     pub(crate) public_id: String,
     pub(crate) fetch_entries_key: Vec<u8>,
     pub(crate) fetch_chains_key: Vec<u8>,
@@ -84,5 +86,25 @@ impl FromRequest for Index {
             .fetch_one(&mut db)
             .await?)
         })
+    }
+}
+
+pub(crate) struct Backend {
+    pub(crate) domain: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub(crate) struct BackendProject {
+    pub(crate) uuid: String,
+}
+
+impl Backend {
+    pub(crate) fn from_env() -> Self {
+        Self {
+            domain: env::var("BACKEND_DOMAIN").expect(
+                "Please set the `BACKEND_DOMAIN` environment variable. Example: \
+                \"backend.mse.cosmian.com\"",
+            ),
+        }
     }
 }
