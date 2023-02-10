@@ -533,6 +533,7 @@ dependencies = [
 [[package]]
 name = "cosmian_findex"
 version = "2.0.1"
+source = "git+https://github.com/Cosmian/findex?branch=findex_cloud#c55b4fcd216f63a5751ebb1765a64d30c0afa15a"
 dependencies = [
  "async-recursion",
  "base64 0.13.1",
