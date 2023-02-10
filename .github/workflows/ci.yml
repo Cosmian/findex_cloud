@@ -8,15 +8,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
-      - name: Build
-        uses: actions-rs/cargo@v1
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
         with:
-          command: build
-  clippy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v1
+          toolchain: nightly
+          override: true
+      - name: Migrate database
+        run: |
+          cargo install sqlx-cli --no-default-features --features sqlite,native-tls
+          sqlx database create
+          sqlx migrate run
+      - name: Clippy
+        run: |
+          rustup component add clippy --toolchain nightly
+          cargo clippy
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
+        run: cargo build --release
