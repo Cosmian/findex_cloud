@@ -24,3 +24,14 @@ jobs:
           cargo clippy
       - name: Build
         run: cargo build --release
+      - name: Push to package.cosmian.com
+        run: |
+          set -x
+          echo "$PACKAGE_SSH_KEY" > ~/id_rsa
+          chmod 600 ~/id_rsa
+          DESTINATION_DIR=/mnt/package/findex_cloud/last_build
+          ssh -i ~/id_rsa -o "StrictHostKeyChecking no" cosmian@package.cosmian.com mkdir -p $DESTINATION_DIR
+          scp -i ~/id_rsa -o "StrictHostKeyChecking no" target/release/findex_cloud cosmian@package.cosmian.com:$DESTINATION_DIR/
+          rm ~/id_rsa
+        env:
+          PACKAGE_SSH_KEY: ${{ secrets.PACKAGE_SSH_KEY }}
