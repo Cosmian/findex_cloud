@@ -22,6 +22,34 @@ mod auth0;
 mod core;
 mod errors;
 
+#[get("/projects/{project_uuid}/indexes")]
+async fn get_indexes(
+    pool: Data<SqlitePool>,
+    backend: Data<Backend>,
+    auth: Auth,
+    project_uuid: Path<String>,
+) -> Response<Vec<Index>> {
+    let projects = BackendProject::get_projects(&backend, &auth).await?;
+
+    if !projects.contains(&BackendProject {
+        uuid: project_uuid.clone(),
+    }) {
+        return Err(Error::UnknownProject(project_uuid.clone()));
+    }
+
+    let mut db = pool.acquire().await?;
+
+    let indexes = sqlx::query_as!(
+        Index,
+        r#"SELECT * FROM indexes WHERE project_uuid = $1"#,
+        *project_uuid,
+    )
+    .fetch_all(&mut db)
+    .await?;
+
+    Ok(Json(indexes))
+}
+
 #[post("/projects/{project_uuid}/indexes")]
 async fn post_indexes(
     pool: Data<SqlitePool>,
@@ -29,13 +57,7 @@ async fn post_indexes(
     auth: Auth,
     project_uuid: Path<String>,
 ) -> Response<Index> {
-    let projects: Vec<BackendProject> = reqwest::Client::new()
-        .get(&format!("https://{}/projects", backend.domain))
-        .bearer_auth(auth.bearer)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let projects = BackendProject::get_projects(&backend, &auth).await?;
 
     if !projects.contains(&BackendProject {
         uuid: project_uuid.clone(),
@@ -88,40 +110,6 @@ async fn post_indexes(
         .await?;
 
     Ok(Json(index))
-}
-
-#[get("/projects/{project_uuid}/indexes")]
-async fn get_indexes(
-    pool: Data<SqlitePool>,
-    backend: Data<Backend>,
-    auth: Auth,
-    project_uuid: Path<String>,
-) -> Response<Vec<Index>> {
-    let projects: Vec<BackendProject> = reqwest::Client::new()
-        .get(&format!("https://{}/projects", backend.domain))
-        .bearer_auth(auth.bearer)
-        .send()
-        .await?
-        .json()
-        .await?;
-
-    if !projects.contains(&BackendProject {
-        uuid: project_uuid.clone(),
-    }) {
-        return Err(Error::UnknownProject(project_uuid.clone()));
-    }
-
-    let mut db = pool.acquire().await?;
-
-    let indexes = sqlx::query_as!(
-        Index,
-        r#"SELECT * FROM indexes WHERE project_uuid = $1"#,
-        *project_uuid,
-    )
-    .fetch_all(&mut db)
-    .await?;
-
-    Ok(Json(indexes))
 }
 
 #[post("/indexes/{public_id}/fetch_entries")]
@@ -290,6 +278,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(database_pool.clone())
             .app_data(backend.clone())
             .app_data(auth0.clone())
+            .service(get_indexes)
             .service(post_indexes)
             .service(fetch_entries)
             .service(fetch_chains)

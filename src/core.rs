@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tiny_keccak::{Hasher, Kmac};
 
-use crate::errors::Error;
+use crate::{auth0::Auth, errors::Error};
 
 pub(crate) struct Id {
     pub(crate) id: i64,
@@ -93,11 +93,6 @@ pub(crate) struct Backend {
     pub(crate) domain: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
-pub(crate) struct BackendProject {
-    pub(crate) uuid: String,
-}
-
 impl Backend {
     pub(crate) fn from_env() -> Self {
         Self {
@@ -106,5 +101,22 @@ impl Backend {
                 \"backend.mse.cosmian.com\"",
             ),
         }
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub(crate) struct BackendProject {
+    pub(crate) uuid: String,
+}
+
+impl BackendProject {
+    pub(crate) async fn get_projects(backend: &Backend, auth: &Auth) -> Result<Vec<Self>, Error> {
+        Ok(reqwest::Client::new()
+            .get(&format!("https://{}/projects", backend.domain))
+            .bearer_auth(&auth.bearer)
+            .send()
+            .await?
+            .json()
+            .await?)
     }
 }
