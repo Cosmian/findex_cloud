@@ -257,6 +257,8 @@ async fn insert_chains(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    dotenv::dotenv().expect("Cannot load env");
+
     env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
     let pool = SqlitePoolOptions::new()
         .connect("sqlite://database.sqlite")
@@ -273,7 +275,7 @@ async fn main() -> std::io::Result<()> {
     let database_pool = Data::new(pool.clone());
 
     task::spawn(async move {
-        let mut interval = time::interval(Duration::from_secs(1 /* 60 * 60 */));
+        let mut interval = time::interval(Duration::from_secs(60 * 60));
 
         loop {
             interval.tick().await;
