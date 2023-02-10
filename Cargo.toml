@@ -11,6 +11,7 @@ actix-web = "4.2.1"
 actix-web-httpauth = "0.8.0"
 alcoholic_jwt = "4091.0.0"
 base64 = "0.21.0"
+chrono = { version = "0.4.23", features = ["serde"] }
 cosmian_crypto_core = "6.0.0"
 cosmian_findex = { path = "../findex", features = ["interfaces", "serde"] }
 env_logger = "0.10.0"
@@ -21,6 +22,6 @@ rand = "0.8.5"
 reqwest = { version = "0.11.14", features = ["json"] }
 serde = { version = "1.0.152", features = ["serde_derive"] }
 serde_json = "1.0.91"
-sqlx = { version = "0.6.2", features = ["runtime-tokio-native-tls", "sqlite"] }
+sqlx = { version = "0.6.2", features = ["runtime-tokio-native-tls", "sqlite", "chrono"] }
 tiny-keccak = { version = "2.0.2", features = ["kmac"] }
 tokio = "1.25.0"

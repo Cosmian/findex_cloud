@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::{
     auth0::{Auth, Auth0},
     core::{check_body_signature, Backend, BackendProject, Id, Index},
@@ -17,6 +19,7 @@ use cosmian_findex::{
 use env_logger::Env;
 use rand::{distributions::Alphanumeric, Rng, RngCore, SeedableRng};
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
+use tokio::{task, time};
 
 mod auth0;
 mod core;
@@ -265,13 +268,28 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Cannot run the database migrations");
 
-    // Configure auth0
     let auth0 = Data::new(Auth0::from_env());
-
-    // Configure auth0
     let backend = Data::new(Backend::from_env());
-
     let database_pool = Data::new(pool.clone());
+
+    task::spawn(async move {
+        let mut interval = time::interval(Duration::from_secs(1 /* 60 * 60 */));
+
+        loop {
+            interval.tick().await;
+            let mut db = pool.acquire().await.unwrap();
+            sqlx::query!(
+                "INSERT INTO stats (index_id, chains_size, entries_size)
+                    SELECT index_id, SUM(chain_size) as chains_size, SUM(entry_size) as entries_size
+                        FROM (
+                                    SELECT index_id, LENGTH(value) as chain_size, 0 as entry_size FROM chains
+                            UNION   SELECT index_id, LENGTH(value) as entry_size, 0 as chain_size FROM entries
+                        ) as lengths
+                    GROUP BY index_id",
+            ).execute(&mut db).await.unwrap();
+        }
+    });
+
     HttpServer::new(move || {
         App::new()
             .wrap(Cors::permissive())

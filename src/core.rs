@@ -6,7 +6,7 @@ use actix_web::{
     FromRequest, HttpRequest,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::{types::chrono::NaiveDateTime, SqlitePool};
 use tiny_keccak::{Hasher, Kmac};
 
 use crate::{auth0::Auth, errors::Error};
@@ -25,6 +25,7 @@ pub(crate) struct Index {
     pub(crate) fetch_chains_key: Vec<u8>,
     pub(crate) upsert_entries_key: Vec<u8>,
     pub(crate) insert_chains_key: Vec<u8>,
+    pub(crate) created_at: NaiveDateTime,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -40,6 +41,7 @@ pub(crate) struct UidAndOldAndNewValues {
     pub(crate) new_value: String,
 }
 
+#[allow(clippy::result_large_err)]
 pub(crate) fn check_body_signature(
     request: &HttpRequest,
     bytes: &Bytes,
