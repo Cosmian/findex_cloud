@@ -18,6 +18,7 @@ use cosmian_findex::{
 };
 use env_logger::Env;
 use rand::{distributions::Alphanumeric, Rng, RngCore, SeedableRng};
+use serde::Deserialize;
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
 use tokio::{task, time};
 
@@ -53,12 +54,18 @@ async fn get_indexes(
     Ok(Json(indexes))
 }
 
+#[derive(Deserialize)]
+struct NewIndex {
+    name: String,
+}
+
 #[post("/projects/{project_uuid}/indexes")]
 async fn post_indexes(
     pool: Data<SqlitePool>,
     backend: Data<Backend>,
     auth: Auth,
     project_uuid: Path<String>,
+    body: Json<NewIndex>,
 ) -> Response<Index> {
     let projects = BackendProject::get_projects(&backend, &auth).await?;
 
@@ -89,17 +96,22 @@ async fn post_indexes(
     let Id { id } = sqlx::query_as!(
         Id,
         r#"INSERT INTO indexes (
+            public_id,
+
             authz_id,
             project_uuid,
-            public_id,
+
+            name,
+
             fetch_entries_key,
             fetch_chains_key,
             upsert_entries_key,
             insert_chains_key
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id"#,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id"#,
+        public_id,
         auth.authz_id,
         *project_uuid,
-        public_id,
+        body.name,
         fetch_entries_key,
         fetch_chains_key,
         upsert_entries_key,

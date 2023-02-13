@@ -17,10 +17,12 @@ pub(crate) struct Id {
 
 #[derive(Serialize)]
 pub(crate) struct Index {
+    #[serde(skip_serializing)]
     pub(crate) id: i64,
+    pub(crate) public_id: String,
     pub(crate) authz_id: String,
     pub(crate) project_uuid: String,
-    pub(crate) public_id: String,
+    pub(crate) name: String,
     pub(crate) fetch_entries_key: Vec<u8>,
     pub(crate) fetch_chains_key: Vec<u8>,
     pub(crate) upsert_entries_key: Vec<u8>,
