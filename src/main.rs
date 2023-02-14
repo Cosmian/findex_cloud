@@ -8,7 +8,7 @@ use crate::{
 use actix_cors::Cors;
 use actix_web::{
     delete, get, post,
-    web::{Bytes, Data, Json, Path},
+    web::{Bytes, Data, Json, Path, Query},
     App, HttpRequest, HttpResponse, HttpServer,
 };
 use cosmian_crypto_core::{bytes_ser_de::Serializable, CsRng};
@@ -26,19 +26,24 @@ mod auth0;
 mod core;
 mod errors;
 
-#[get("/projects/{project_uuid}/indexes")]
+#[derive(Deserialize)]
+struct GetIndexQuery {
+    project_uuid: String,
+}
+
+#[get("/indexes")]
 async fn get_indexes(
     pool: Data<SqlitePool>,
     backend: Data<Backend>,
     auth: Auth,
-    project_uuid: Path<String>,
+    params: Query<GetIndexQuery>,
 ) -> Response<Vec<Index>> {
     let projects = BackendProject::get_projects(&backend, &auth).await?;
 
     if !projects.contains(&BackendProject {
-        uuid: project_uuid.clone(),
+        uuid: params.project_uuid.clone(),
     }) {
-        return Err(Error::UnknownProject(project_uuid.clone()));
+        return Err(Error::UnknownProject(params.project_uuid.clone()));
     }
 
     let mut db = pool.acquire().await?;
@@ -50,8 +55,9 @@ async fn get_indexes(
                 *,
                 COALESCE((SELECT chains_size + entries_size FROM stats WHERE id = (SELECT MAX(id) FROM stats WHERE index_id = indexes.id)), 0) as "size: _"
             FROM indexes
-            WHERE project_uuid = $1 AND deleted_at IS NULL"#,
-        *project_uuid,
+            WHERE project_uuid = $1 AND deleted_at IS NULL
+            ORDER BY created_at DESC"#,
+        params.project_uuid,
     )
     .fetch_all(&mut db)
     .await?;
@@ -61,23 +67,23 @@ async fn get_indexes(
 
 #[derive(Deserialize)]
 struct NewIndex {
+    project_uuid: String,
     name: String,
 }
 
-#[post("/projects/{project_uuid}/indexes")]
+#[post("/indexes")]
 async fn post_indexes(
     pool: Data<SqlitePool>,
     backend: Data<Backend>,
     auth: Auth,
-    project_uuid: Path<String>,
     body: Json<NewIndex>,
 ) -> Response<Index> {
     let projects = BackendProject::get_projects(&backend, &auth).await?;
 
     if !projects.contains(&BackendProject {
-        uuid: project_uuid.clone(),
+        uuid: body.project_uuid.clone(),
     }) {
-        return Err(Error::UnknownProject(project_uuid.clone()));
+        return Err(Error::UnknownProject(body.project_uuid.clone()));
     }
 
     let mut db = pool.acquire().await?;
@@ -115,7 +121,7 @@ async fn post_indexes(
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id"#,
         public_id,
         auth.authz_id,
-        *project_uuid,
+        body.project_uuid,
         body.name,
         fetch_entries_key,
         fetch_chains_key,
