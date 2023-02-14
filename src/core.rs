@@ -30,6 +30,9 @@ pub(crate) struct Index {
     pub(crate) insert_chains_key: Vec<u8>,
     pub(crate) size: Option<i64>,
     pub(crate) created_at: NaiveDateTime,
+    #[serde(skip_serializing)]
+    #[allow(dead_code)]
+    pub(crate) deleted_at: Option<NaiveDateTime>,
 }
 
 #[derive(Serialize, Deserialize)]

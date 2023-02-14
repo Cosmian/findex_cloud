@@ -7,7 +7,7 @@ use crate::{
 };
 use actix_cors::Cors;
 use actix_web::{
-    get, post,
+    delete, get, post,
     web::{Bytes, Data, Json, Path},
     App, HttpRequest, HttpResponse, HttpServer,
 };
@@ -50,7 +50,7 @@ async fn get_indexes(
                 *,
                 COALESCE((SELECT chains_size + entries_size FROM stats WHERE id = (SELECT MAX(id) FROM stats WHERE index_id = indexes.id)), 0) as "size: _"
             FROM indexes
-            WHERE project_uuid = $1"#,
+            WHERE project_uuid = $1 AND deleted_at IS NULL"#,
         *project_uuid,
     )
     .fetch_all(&mut db)
@@ -147,7 +147,7 @@ async fn get_index(pool: Data<SqlitePool>, auth: Auth, public_id: Path<String>) 
                 *,
                 COALESCE((SELECT chains_size + entries_size FROM stats WHERE id = (SELECT MAX(id) FROM stats WHERE index_id = indexes.id)), 0) as "size: _"
             FROM indexes
-            WHERE public_id = $1 AND authz_id = $2
+            WHERE public_id = $1 AND authz_id = $2 AND deleted_at IS NULL
         "#,
         *public_id,
         auth.authz_id,
@@ -156,6 +156,26 @@ async fn get_index(pool: Data<SqlitePool>, auth: Auth, public_id: Path<String>) 
     .await?;
 
     Ok(Json(index))
+}
+
+#[delete("/indexes/{public_id}")]
+async fn delete_index(pool: Data<SqlitePool>, auth: Auth, public_id: Path<String>) -> Response<()> {
+    let mut db = pool.acquire().await?;
+
+    sqlx::query_as!(
+        Index,
+        r#"
+            UPDATE indexes
+            SET deleted_at = current_timestamp
+            WHERE public_id = $1 AND authz_id = $2
+        "#,
+        *public_id,
+        auth.authz_id,
+    )
+    .execute(&mut db)
+    .await?;
+
+    Ok(Json(()))
 }
 
 #[post("/indexes/{public_id}/fetch_entries")]
@@ -344,6 +364,7 @@ async fn main() -> std::io::Result<()> {
             .service(get_index)
             .service(get_indexes)
             .service(post_indexes)
+            .service(delete_index)
             .service(fetch_entries)
             .service(fetch_chains)
             .service(upsert_entries)
