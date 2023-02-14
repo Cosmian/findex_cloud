@@ -27,6 +27,7 @@ pub(crate) struct Index {
     pub(crate) fetch_chains_key: Vec<u8>,
     pub(crate) upsert_entries_key: Vec<u8>,
     pub(crate) insert_chains_key: Vec<u8>,
+    pub(crate) size: Option<i64>,
     pub(crate) created_at: NaiveDateTime,
 }
 
@@ -84,7 +85,7 @@ impl FromRequest for Index {
 
             Ok(sqlx::query_as!(
                 Index,
-                r#"SELECT * FROM indexes WHERE public_id = $1"#,
+                r#"SELECT *, null as "size: _" FROM indexes WHERE public_id = $1"#,
                 *public_id
             )
             .fetch_one(&mut db)

@@ -45,7 +45,12 @@ async fn get_indexes(
 
     let indexes = sqlx::query_as!(
         Index,
-        r#"SELECT * FROM indexes WHERE project_uuid = $1"#,
+        r#"
+            SELECT
+                *,
+                (SELECT chains_size + entries_size FROM stats WHERE id = (SELECT MAX(id) FROM stats WHERE index_id = indexes.id)) as "size: _"
+            FROM indexes
+            WHERE project_uuid = $1"#,
         *project_uuid,
     )
     .fetch_all(&mut db)
@@ -120,9 +125,13 @@ async fn post_indexes(
     .fetch_one(&mut db)
     .await?;
 
-    let index = sqlx::query_as!(Index, r#"SELECT * FROM indexes WHERE id = $1"#, id)
-        .fetch_one(&mut db)
-        .await?;
+    let index = sqlx::query_as!(
+        Index,
+        r#"SELECT *, null as "size: _" FROM indexes WHERE id = $1"#,
+        id
+    )
+    .fetch_one(&mut db)
+    .await?;
 
     Ok(Json(index))
 }
