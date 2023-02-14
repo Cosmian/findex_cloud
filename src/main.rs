@@ -48,7 +48,7 @@ async fn get_indexes(
         r#"
             SELECT
                 *,
-                (SELECT chains_size + entries_size FROM stats WHERE id = (SELECT MAX(id) FROM stats WHERE index_id = indexes.id)) as "size: _"
+                COALESCE((SELECT chains_size + entries_size FROM stats WHERE id = (SELECT MAX(id) FROM stats WHERE index_id = indexes.id)), 0) as "size: _"
             FROM indexes
             WHERE project_uuid = $1"#,
         *project_uuid,
