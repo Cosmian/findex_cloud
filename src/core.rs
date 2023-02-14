@@ -89,7 +89,7 @@ impl FromRequest for Index {
 
             Ok(sqlx::query_as!(
                 Index,
-                r#"SELECT *, null as "size: _" FROM indexes WHERE public_id = $1"#,
+                r#"SELECT *, null as "size: _" FROM indexes WHERE public_id = $1 AND deleted_at IS NULL"#,
                 *public_id
             )
             .fetch_one(&mut db)
