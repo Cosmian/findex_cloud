@@ -878,7 +878,6 @@ dependencies = [
  "dotenv",
  "env_logger",
  "futures",
- "hex",
  "p384",
  "rand",
  "reqwest",

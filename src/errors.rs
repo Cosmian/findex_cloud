@@ -14,7 +14,6 @@ use actix_web_httpauth::{
 };
 use alcoholic_jwt::ValidationError;
 use cosmian_findex::error::FindexErr;
-use hex::FromHexError;
 use reqwest::header::InvalidHeaderValue;
 
 pub type Response<T> = Result<Json<T>, Error>;
@@ -26,7 +25,6 @@ pub enum Error {
     InvalidSignature,
     WrongEncoding,
     Json,
-    Hex,
     WrongIndexPublicId,
     Findex(String),
 
@@ -71,7 +69,6 @@ impl ResponseError for Error {
             Self::InvalidSignature => StatusCode::FORBIDDEN,
             Self::WrongEncoding => StatusCode::BAD_REQUEST,
             Self::Json => StatusCode::BAD_REQUEST,
-            Self::Hex => StatusCode::BAD_REQUEST,
             Self::WrongIndexPublicId => StatusCode::BAD_REQUEST,
             Self::Findex(_) => StatusCode::BAD_REQUEST,
 
@@ -111,12 +108,6 @@ impl From<serde_json::Error> for Error {
 impl From<FromUtf8Error> for Error {
     fn from(_: FromUtf8Error) -> Self {
         Error::WrongEncoding
-    }
-}
-
-impl From<FromHexError> for Error {
-    fn from(_: FromHexError) -> Self {
-        Error::Hex
     }
 }
 

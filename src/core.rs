@@ -10,6 +10,7 @@ use sqlx::{types::chrono::NaiveDateTime, SqlitePool};
 use tiny_keccak::{Hasher, Kmac};
 
 use crate::{auth0::Auth, errors::Error};
+use base64::{engine::general_purpose::STANDARD as base64, Engine as _};
 
 pub(crate) struct Id {
     pub(crate) id: i64,
@@ -55,7 +56,7 @@ pub(crate) fn check_body_signature(
     hasher.update(bytes);
     hasher.finalize(&mut output);
 
-    if hex::encode(output)
+    if base64.encode(output)
         != request
             .headers()
             .get("x-findex-cloud-signature")

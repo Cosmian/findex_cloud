@@ -136,6 +136,28 @@ async fn post_indexes(
     Ok(Json(index))
 }
 
+#[get("/indexes/{public_id}")]
+async fn get_index(pool: Data<SqlitePool>, auth: Auth, public_id: Path<String>) -> Response<Index> {
+    let mut db = pool.acquire().await?;
+
+    let index = sqlx::query_as!(
+        Index,
+        r#"
+            SELECT
+                *,
+                COALESCE((SELECT chains_size + entries_size FROM stats WHERE id = (SELECT MAX(id) FROM stats WHERE index_id = indexes.id)), 0) as "size: _"
+            FROM indexes
+            WHERE public_id = $1 AND authz_id = $2
+        "#,
+        *public_id,
+        auth.authz_id,
+    )
+    .fetch_one(&mut db)
+    .await?;
+
+    Ok(Json(index))
+}
+
 #[post("/indexes/{public_id}/fetch_entries")]
 async fn fetch_entries(
     pool: Data<SqlitePool>,
@@ -319,6 +341,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(database_pool.clone())
             .app_data(backend.clone())
             .app_data(auth0.clone())
+            .service(get_index)
             .service(get_indexes)
             .service(post_indexes)
             .service(fetch_entries)

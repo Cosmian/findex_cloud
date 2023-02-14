@@ -17,7 +17,6 @@ cosmian_findex = { git = "https://github.com/Cosmian/findex", branch = "findex_c
 dotenv = "0.15.0"
 env_logger = "0.10.0"
 futures = "0.3.26"
-hex = "0.4.3"
 p384 = { version = "0.11.2", features = ["serde"] }
 rand = "0.8.5"
 reqwest = { version = "0.11.14", features = ["json"] }
