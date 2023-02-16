@@ -1,16 +1,23 @@
-use std::{env, future::Future, pin::Pin};
+use std::{env, future::Future, pin::Pin, time::SystemTime};
 
 use actix_web::{
     dev::Payload,
     web::{Bytes, Data, Path},
-    FromRequest, HttpRequest,
+    FromRequest,
+};
+use cosmian_crypto_core::bytes_ser_de::Serializable;
+use cosmian_findex::{
+    core::KeyingMaterial,
+    interfaces::{
+        cloud::{CALLBACK_SIGNATURE_LENGTH, SIGNATURE_SEED_LENGTH},
+        generic_parameters::KmacKey,
+    },
+    kmac,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{types::chrono::NaiveDateTime, SqlitePool};
-use tiny_keccak::{Hasher, Kmac};
 
 use crate::{auth0::Auth, errors::Error};
-use base64::{engine::general_purpose::STANDARD as base64, Engine as _};
 
 pub(crate) struct Id {
     pub(crate) id: i64,
@@ -50,26 +57,55 @@ pub(crate) struct UidAndOldAndNewValues {
 
 #[allow(clippy::result_large_err)]
 pub(crate) fn check_body_signature(
-    request: &HttpRequest,
-    bytes: &Bytes,
-    key: &[u8],
-) -> Result<(), Error> {
-    let mut hasher = Kmac::v128(key, &[]);
-    let mut output = [0u8; 32];
-    hasher.update(bytes);
-    hasher.finalize(&mut output);
+    body: Bytes,
+    index_id: &str,
+    seed: &[u8],
+) -> Result<Vec<u8>, Error> {
+    let original_length = body.len();
+    let mut bytes = body.into_iter();
 
-    if base64.encode(output)
-        != request
-            .headers()
-            .get("x-findex-cloud-signature")
-            .and_then(|header| header.to_str().ok())
-            .unwrap_or_default()
-    {
+    let signature_received = bytes
+        .next_chunk::<CALLBACK_SIGNATURE_LENGTH>()
+        .map_err(|_| {
+            Error::BadRequest(format!(
+                "Body of request is too small ({original_length} bytes), not enought bytes to read signature.",
+            ))
+        })?;
+
+    let timestamp_bytes = bytes
+        .next_chunk()
+        .map_err(|_| Error::BadRequest(format!("Body of request is too small ({original_length} bytes), not enought bytes to read expiration timestamp.")))?;
+
+    let data: Vec<_> = bytes.collect();
+
+    let key: KmacKey =
+        KeyingMaterial::<SIGNATURE_SEED_LENGTH>::try_from_bytes(seed.to_vec().as_slice())
+            .unwrap()
+            .derive_kmac_key(index_id.as_bytes());
+
+    let signature_computed = kmac!(CALLBACK_SIGNATURE_LENGTH, &key, &timestamp_bytes, &data);
+    dbg!(
+        original_length,
+        timestamp_bytes,
+        signature_received,
+        signature_computed,
+        key,
+    );
+    if signature_received != signature_computed {
         return Err(Error::InvalidSignature);
     }
 
-    Ok(())
+    let expiration_timestamp = u64::from_be_bytes(timestamp_bytes);
+    let current_timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_err(|_| Error::BadRequest("SystemTime is before UNIX_EPOCH".to_owned()))?
+        .as_secs();
+
+    if current_timestamp > expiration_timestamp {
+        return Err(Error::BadRequest(format!("Request expired (current time is {current_timestamp}, expiration time is {expiration_timestamp})")));
+    }
+
+    Ok(data)
 }
 
 impl FromRequest for Index {

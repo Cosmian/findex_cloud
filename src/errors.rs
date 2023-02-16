@@ -46,6 +46,8 @@ pub enum Error {
     UnknownProject(String),
 
     Reqwest(reqwest::Error),
+
+    BadRequest(String),
 }
 
 impl Display for Error {
@@ -64,6 +66,8 @@ impl ResponseError for Error {
     }
 
     fn status_code(&self) -> StatusCode {
+        log::error!("{self:?}");
+
         match *self {
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidSignature => StatusCode::FORBIDDEN,
@@ -89,6 +93,8 @@ impl ResponseError for Error {
 
             Self::UnknownProject(_) => StatusCode::NOT_FOUND,
             Self::Reqwest(_) => StatusCode::INTERNAL_SERVER_ERROR,
+
+            Self::BadRequest(_) => StatusCode::BAD_REQUEST,
         }
     }
 }

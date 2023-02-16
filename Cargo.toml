@@ -13,10 +13,11 @@ alcoholic_jwt = "4091.0.0"
 base64 = "0.21.0"
 chrono = { version = "0.4.23", features = ["serde"] }
 cosmian_crypto_core = "6.0.0"
-cosmian_findex = { git = "https://github.com/Cosmian/findex", branch = "findex_cloud", features = ["interfaces", "serde"] }
+cosmian_findex = { git = "https://github.com/Cosmian/findex", branch = "findex_cloud", features = ["cloud"] }
 dotenv = "0.15.0"
 env_logger = "0.10.0"
 futures = "0.3.26"
+log = "0.4.17"
 p384 = { version = "0.11.2", features = ["serde"] }
 rand = "0.8.5"
 reqwest = { version = "0.11.14", features = ["json"] }

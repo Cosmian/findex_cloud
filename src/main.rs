@@ -1,3 +1,5 @@
+#![feature(iter_next_chunk)]
+
 use std::time::Duration;
 
 use crate::{
@@ -7,9 +9,11 @@ use crate::{
 };
 use actix_cors::Cors;
 use actix_web::{
-    delete, get, post,
+    delete, get,
+    middleware::Logger,
+    post,
     web::{Bytes, Data, Json, Path, Query},
-    App, HttpRequest, HttpResponse, HttpServer,
+    App, HttpResponse, HttpServer,
 };
 use cosmian_crypto_core::{bytes_ser_de::Serializable, CsRng};
 use cosmian_findex::{
@@ -185,15 +189,10 @@ async fn delete_index(pool: Data<SqlitePool>, auth: Auth, public_id: Path<String
 }
 
 #[post("/indexes/{public_id}/fetch_entries")]
-async fn fetch_entries(
-    pool: Data<SqlitePool>,
-    index: Index,
-    bytes: Bytes,
-    request: HttpRequest,
-) -> ResponseBytes {
+async fn fetch_entries(pool: Data<SqlitePool>, index: Index, bytes: Bytes) -> ResponseBytes {
     let mut db = pool.acquire().await?;
 
-    check_body_signature(&request, &bytes, &index.fetch_entries_key)?;
+    let bytes = check_body_signature(bytes, &index.public_id, &index.fetch_entries_key)?;
     let body = deserialize_set::<Uid<UID_LENGTH>>(&bytes)?;
 
     let commas = vec!["?"; body.len()].join(",");
@@ -222,15 +221,10 @@ async fn fetch_entries(
 }
 
 #[post("/indexes/{public_id}/fetch_chains")]
-async fn fetch_chains(
-    pool: Data<SqlitePool>,
-    index: Index,
-    bytes: Bytes,
-    request: HttpRequest,
-) -> ResponseBytes {
+async fn fetch_chains(pool: Data<SqlitePool>, index: Index, bytes: Bytes) -> ResponseBytes {
     let mut db = pool.acquire().await?;
 
-    check_body_signature(&request, &bytes, &index.fetch_chains_key)?;
+    let bytes = check_body_signature(bytes, &index.public_id, &index.fetch_chains_key)?;
     let body = deserialize_set::<Uid<UID_LENGTH>>(&bytes)?;
 
     let commas = vec!["?"; body.len()].join(",");
@@ -259,15 +253,10 @@ async fn fetch_chains(
 }
 
 #[post("/indexes/{public_id}/upsert_entries")]
-async fn upsert_entries(
-    pool: Data<SqlitePool>,
-    bytes: Bytes,
-    request: HttpRequest,
-    index: Index,
-) -> ResponseBytes {
+async fn upsert_entries(pool: Data<SqlitePool>, bytes: Bytes, index: Index) -> ResponseBytes {
     let mut db = pool.acquire().await?;
 
-    check_body_signature(&request, &bytes, &index.upsert_entries_key)?;
+    let bytes = check_body_signature(bytes, &index.public_id, &index.upsert_entries_key)?;
     let body = UpsertData::<UID_LENGTH>::try_from_bytes(&bytes)?;
 
     let mut rejected = EncryptedTable::with_capacity(1);
@@ -298,15 +287,10 @@ async fn upsert_entries(
 }
 
 #[post("/indexes/{public_id}/insert_chains")]
-async fn insert_chains(
-    pool: Data<SqlitePool>,
-    index: Index,
-    bytes: Bytes,
-    request: HttpRequest,
-) -> Response<()> {
+async fn insert_chains(pool: Data<SqlitePool>, index: Index, bytes: Bytes) -> Response<()> {
     let mut db = pool.acquire().await?;
 
-    check_body_signature(&request, &bytes, &index.insert_chains_key)?;
+    let bytes = check_body_signature(bytes, &index.public_id, &index.insert_chains_key)?;
     let body = EncryptedTable::<UID_LENGTH>::try_from_bytes(&bytes)?;
 
     for (uid, value) in body.iter() {
@@ -364,6 +348,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .wrap(Cors::permissive())
+            .wrap(Logger::default())
             .app_data(database_pool.clone())
             .app_data(backend.clone())
             .app_data(auth0.clone())
