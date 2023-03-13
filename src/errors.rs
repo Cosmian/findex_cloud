@@ -13,7 +13,8 @@ use actix_web_httpauth::{
     extractors::AuthenticationError, headers::www_authenticate::bearer::Bearer,
 };
 use alcoholic_jwt::ValidationError;
-use cosmian_findex::error::FindexErr;
+use cloudproof_findex::ser_de::SerializableSetError;
+use cosmian_findex::CoreError;
 use reqwest::header::InvalidHeaderValue;
 
 pub type Response<T> = Result<Json<T>, Error>;
@@ -117,8 +118,14 @@ impl From<FromUtf8Error> for Error {
     }
 }
 
-impl From<FindexErr> for Error {
-    fn from(err: FindexErr) -> Self {
+impl From<CoreError> for Error {
+    fn from(err: CoreError) -> Self {
+        Error::Findex(err.to_string())
+    }
+}
+
+impl From<SerializableSetError> for Error {
+    fn from(err: SerializableSetError) -> Self {
         Error::Findex(err.to_string())
     }
 }

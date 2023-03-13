@@ -15,11 +15,10 @@ use actix_web::{
     web::{Bytes, Data, Json, Path, Query},
     App, HttpResponse, HttpServer,
 };
-use cosmian_crypto_core::{bytes_ser_de::Serializable, CsRng};
-use cosmian_findex::{
-    core::{EncryptedTable, Uid, UpsertData},
-    interfaces::{generic_parameters::UID_LENGTH, ser_de::deserialize_set},
-};
+use cloudproof_findex::ser_de::deserialize_set;
+use cosmian_crypto_core::bytes_ser_de::Serializable;
+use cosmian_crypto_core::CsRng;
+use cosmian_findex::{parameters::UID_LENGTH, CoreError, EncryptedTable, Uid, UpsertData};
 use env_logger::Env;
 use rand::{distributions::Alphanumeric, Rng, RngCore, SeedableRng};
 use serde::Deserialize;
@@ -193,7 +192,7 @@ async fn fetch_entries(pool: Data<SqlitePool>, index: Index, bytes: Bytes) -> Re
     let mut db = pool.acquire().await?;
 
     let bytes = check_body_signature(bytes, &index.public_id, &index.fetch_entries_key)?;
-    let body = deserialize_set::<Uid<UID_LENGTH>>(&bytes)?;
+    let body = deserialize_set::<CoreError, Uid<UID_LENGTH>>(&bytes)?;
 
     let commas = vec!["?"; body.len()].join(",");
     let sql = format!("SELECT * FROM entries WHERE index_id = ? AND uid IN ({commas})");
@@ -225,7 +224,7 @@ async fn fetch_chains(pool: Data<SqlitePool>, index: Index, bytes: Bytes) -> Res
     let mut db = pool.acquire().await?;
 
     let bytes = check_body_signature(bytes, &index.public_id, &index.fetch_chains_key)?;
-    let body = deserialize_set::<Uid<UID_LENGTH>>(&bytes)?;
+    let body = deserialize_set::<CoreError, Uid<UID_LENGTH>>(&bytes)?;
 
     let commas = vec!["?"; body.len()].join(",");
     let sql = format!("SELECT * FROM chains WHERE index_id = ? AND uid IN ({commas})");

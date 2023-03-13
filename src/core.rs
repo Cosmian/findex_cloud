@@ -5,15 +5,10 @@ use actix_web::{
     web::{Bytes, Data, Path},
     FromRequest,
 };
+use cloudproof_findex::cloud::{CALLBACK_SIGNATURE_LENGTH, SIGNATURE_SEED_LENGTH};
+
 use cosmian_crypto_core::bytes_ser_de::Serializable;
-use cosmian_findex::{
-    core::KeyingMaterial,
-    interfaces::{
-        cloud::{CALLBACK_SIGNATURE_LENGTH, SIGNATURE_SEED_LENGTH},
-        generic_parameters::KmacKey,
-    },
-    kmac,
-};
+use cosmian_findex::{kmac, parameters::KmacKey, KeyingMaterial};
 use serde::{Deserialize, Serialize};
 use sqlx::{types::chrono::NaiveDateTime, SqlitePool};
 

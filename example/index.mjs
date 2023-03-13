@@ -7,37 +7,53 @@ let { upsert, search } = await FindexCloud();
 // global.Response = Response;
 // global.fetch = fetch;
 
+// staging
+// const token =
+//   "TcVMXbtbwT3bX2P/BQsXOTpC4MAC7jMRcsQwJ8Xj6Dh6j5ro2AQc1XsIVoYJFxxEpxH0qcF8Cp/rPXagpRLluJy8/VJN4lAOcB8Ow/50f0R8TbJHoNERS";
+
+// localhost
 const token =
-  "F2NhU/7FisuOCjWP7UDdKWWtuxgCiT3dqERkTUNEhujgebBcwAQiA7S4/AcaftHuAojwlgXYCpml3pmoRljXJKezKuN2A1gNBPW43KL2t42Jh7dnoxcKv";
+  "pEFf4TzUewtYcFW4EMKVbjbPXqgCkvI4Bbm0X312V1AvaV/2KAfXirXbH+XVuqddCeO+Qc/cCL6CE+5jts31fK2UHhuIFUAMbG2L7uaTOchaUMFKkaOgv";
 
-const start = new Date();
-const NUMBER_OF_ITERATION = 100;
+// const start = new Date();
+// const NUMBER_OF_ITERATION = 100;
 
-console.log(Label.fromString("blah").bytes);
-
-await upsert(token, Label.fromString("blah"), [
-  {
-    indexedValue: Location.fromNumber(42),
-    keywords: ["Thibaud", "Dauce"],
-  },
-  {
-    indexedValue: Location.fromNumber(38),
-    keywords: ["Alice", "Dauce"],
-  },
-]);
-
-for (let index = 0; index < NUMBER_OF_ITERATION; index++) {
-  console.log(index);
-  await upsert(token, Label.fromString("blah"), [
+await upsert(
+  token,
+  Label.fromString("blah"),
+  [
     {
       indexedValue: Location.fromNumber(42),
-      keywords: [index.toString(), "Thibaud", "Dauce"],
+      keywords: ["Thibaud", "Dauce"],
     },
     {
       indexedValue: Location.fromNumber(38),
-      keywords: [index.toString(), "Alice", "Dauce"],
+      keywords: ["Alice", "Dauce"],
     },
-  ]);
-}
+  ],
+  {
+    baseUrl: "http://127.0.0.1:8080",
+  }
+);
 
-console.log((new Date() - start) / 1000 / NUMBER_OF_ITERATION);
+let results = await search(token, Label.fromString("blah"), ["Dauce"], {
+  baseUrl: "http://127.0.0.1:8080",
+});
+
+console.log(results.toNumbers());
+
+// for (let index = 0; index < NUMBER_OF_ITERATION; index++) {
+//   console.log(index);
+//   await upsert(token, Label.fromString("blah"), [
+//     {
+//       indexedValue: Location.fromNumber(42),
+//       keywords: [index.toString(), "Thibaud", "Dauce"],
+//     },
+//     {
+//       indexedValue: Location.fromNumber(38),
+//       keywords: [index.toString(), "Alice", "Dauce"],
+//     },
+//   ]);
+// }
+
+// console.log((new Date() - start) / 1000 / NUMBER_OF_ITERATION);
