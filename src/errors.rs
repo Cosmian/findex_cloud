@@ -12,6 +12,7 @@ use actix_web::{
 use actix_web_httpauth::{
     extractors::AuthenticationError, headers::www_authenticate::bearer::Bearer,
 };
+#[cfg(feature = "multitenant")]
 use alcoholic_jwt::ValidationError;
 use cloudproof_findex::ser_de::SerializableSetError;
 use cosmian_findex::CoreError;
@@ -29,21 +30,31 @@ pub enum Error {
     WrongIndexPublicId,
     Findex(String),
 
+    #[cfg(feature = "multitenant")]
     InvalidConfiguration,
 
+    #[cfg(feature = "multitenant")]
     CannotFetchJwks(reqwest::Error),
+    #[cfg(feature = "multitenant")]
     CannotFetchJwksResponse(reqwest::Error),
 
+    #[cfg(feature = "multitenant")]
     JwksNoKid,
+    #[cfg(feature = "multitenant")]
     JwksValidationError(ValidationError),
+    #[cfg(feature = "multitenant")]
     TokenKidNotFoundInJwksKeysSet,
+    #[cfg(feature = "multitenant")]
     MissingSubInJwtToken,
+    #[cfg(feature = "multitenant")]
     InvalidSubInJwtToken,
+    #[cfg(feature = "multitenant")]
     TokenExpired,
 
     FailToBuildBearerHeader(InvalidHeaderValue),
     BearerError(AuthenticationError<Bearer>),
 
+    #[cfg(feature = "multitenant")]
     UnknownProject(String),
 
     Reqwest(reqwest::Error),
@@ -77,21 +88,29 @@ impl ResponseError for Error {
             Self::WrongIndexPublicId => StatusCode::BAD_REQUEST,
             Self::Findex(_) => StatusCode::BAD_REQUEST,
 
+            #[cfg(feature = "multitenant")]
             Self::InvalidConfiguration => StatusCode::INTERNAL_SERVER_ERROR,
-
+            #[cfg(feature = "multitenant")]
             Self::CannotFetchJwks(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            #[cfg(feature = "multitenant")]
             Self::CannotFetchJwksResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
-
+            #[cfg(feature = "multitenant")]
             Self::JwksNoKid => StatusCode::INTERNAL_SERVER_ERROR,
+            #[cfg(feature = "multitenant")]
             Self::JwksValidationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            #[cfg(feature = "multitenant")]
             Self::TokenKidNotFoundInJwksKeysSet => StatusCode::INTERNAL_SERVER_ERROR,
+            #[cfg(feature = "multitenant")]
             Self::MissingSubInJwtToken => StatusCode::INTERNAL_SERVER_ERROR,
+            #[cfg(feature = "multitenant")]
             Self::InvalidSubInJwtToken => StatusCode::INTERNAL_SERVER_ERROR,
+            #[cfg(feature = "multitenant")]
             Self::TokenExpired => StatusCode::FORBIDDEN,
 
             Self::FailToBuildBearerHeader(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::BearerError(_) => StatusCode::FORBIDDEN,
 
+            #[cfg(feature = "multitenant")]
             Self::UnknownProject(_) => StatusCode::NOT_FOUND,
             Self::Reqwest(_) => StatusCode::INTERNAL_SERVER_ERROR,
 

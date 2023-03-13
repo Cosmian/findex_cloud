@@ -2,17 +2,25 @@
 
 use std::time::Duration;
 
+#[cfg(feature = "multitenant")]
+use crate::auth0::{Auth, Auth0};
+#[cfg(feature = "multitenant")]
+use crate::core::{Backend, BackendProject};
+#[cfg(feature = "multitenant")]
+use crate::errors::Error;
+#[cfg(feature = "multitenant")]
+use actix_web::web::Query;
+
 use crate::{
-    auth0::{Auth, Auth0},
-    core::{check_body_signature, Backend, BackendProject, Id, Index},
-    errors::{Error, Response, ResponseBytes},
+    core::{check_body_signature, Id, Index},
+    errors::{Response, ResponseBytes},
 };
 use actix_cors::Cors;
 use actix_web::{
     delete, get,
     middleware::Logger,
     post,
-    web::{Bytes, Data, Json, Path, Query},
+    web::{Bytes, Data, Json, Path},
     App, HttpResponse, HttpServer,
 };
 use cloudproof_findex::ser_de::deserialize_set;
@@ -25,10 +33,18 @@ use serde::Deserialize;
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
 use tokio::{task, time};
 
+#[cfg(feature = "multitenant")]
 mod auth0;
 mod core;
 mod errors;
 
+#[cfg(not(feature = "multitenant"))]
+const SINGLE_TENANT_PROJECT_UUID: &str = "585ae6a7-f1a3-430b-850e-8bd3a308c321";
+
+#[cfg(not(feature = "multitenant"))]
+const SINGLE_TENANT_AUTHZ_ID: &str = "SINGLE_TENANT_AUTHZ_ID";
+
+#[cfg(feature = "multitenant")]
 #[derive(Deserialize)]
 struct GetIndexQuery {
     project_uuid: String,
@@ -37,19 +53,27 @@ struct GetIndexQuery {
 #[get("/indexes")]
 async fn get_indexes(
     pool: Data<SqlitePool>,
-    backend: Data<Backend>,
-    auth: Auth,
-    params: Query<GetIndexQuery>,
+    #[cfg(feature = "multitenant")] backend: Data<Backend>,
+    #[cfg(feature = "multitenant")] auth: Auth,
+    #[cfg(feature = "multitenant")] params: Query<GetIndexQuery>,
 ) -> Response<Vec<Index>> {
-    let projects = BackendProject::get_projects(&backend, &auth).await?;
+    #[cfg(feature = "multitenant")]
+    {
+        let projects = BackendProject::get_projects(&backend, &auth).await?;
 
-    if !projects.contains(&BackendProject {
-        uuid: params.project_uuid.clone(),
-    }) {
-        return Err(Error::UnknownProject(params.project_uuid.clone()));
+        if !projects.contains(&BackendProject {
+            uuid: params.project_uuid.clone(),
+        }) {
+            return Err(Error::UnknownProject(params.project_uuid.clone()));
+        }
     }
 
     let mut db = pool.acquire().await?;
+
+    #[cfg(not(feature = "multitenant"))]
+    let project_uuid = SINGLE_TENANT_PROJECT_UUID;
+    #[cfg(feature = "multitenant")]
+    let project_uuid = &params.project_uuid;
 
     let indexes = sqlx::query_as!(
         Index,
@@ -60,7 +84,7 @@ async fn get_indexes(
             FROM indexes
             WHERE project_uuid = $1 AND deleted_at IS NULL
             ORDER BY created_at DESC"#,
-        params.project_uuid,
+        project_uuid,
     )
     .fetch_all(&mut db)
     .await?;
@@ -70,6 +94,7 @@ async fn get_indexes(
 
 #[derive(Deserialize)]
 struct NewIndex {
+    #[cfg(feature = "multitenant")]
     project_uuid: String,
     name: String,
 }
@@ -77,16 +102,19 @@ struct NewIndex {
 #[post("/indexes")]
 async fn post_indexes(
     pool: Data<SqlitePool>,
-    backend: Data<Backend>,
-    auth: Auth,
+    #[cfg(feature = "multitenant")] backend: Data<Backend>,
+    #[cfg(feature = "multitenant")] auth: Auth,
     body: Json<NewIndex>,
 ) -> Response<Index> {
-    let projects = BackendProject::get_projects(&backend, &auth).await?;
+    #[cfg(feature = "multitenant")]
+    {
+        let projects = BackendProject::get_projects(&backend, &auth).await?;
 
-    if !projects.contains(&BackendProject {
-        uuid: body.project_uuid.clone(),
-    }) {
-        return Err(Error::UnknownProject(body.project_uuid.clone()));
+        if !projects.contains(&BackendProject {
+            uuid: body.project_uuid.clone(),
+        }) {
+            return Err(Error::UnknownProject(body.project_uuid.clone()));
+        }
     }
 
     let mut db = pool.acquire().await?;
@@ -107,6 +135,16 @@ async fn post_indexes(
         .map(char::from)
         .collect();
 
+    #[cfg(not(feature = "multitenant"))]
+    let authz_id = SINGLE_TENANT_AUTHZ_ID;
+    #[cfg(feature = "multitenant")]
+    let authz_id = auth.authz_id;
+
+    #[cfg(not(feature = "multitenant"))]
+    let project_uuid = SINGLE_TENANT_PROJECT_UUID;
+    #[cfg(feature = "multitenant")]
+    let project_uuid = &body.project_uuid;
+
     let Id { id } = sqlx::query_as!(
         Id,
         r#"INSERT INTO indexes (
@@ -123,8 +161,8 @@ async fn post_indexes(
             insert_chains_key
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id"#,
         public_id,
-        auth.authz_id,
-        body.project_uuid,
+        authz_id,
+        project_uuid,
         body.name,
         fetch_entries_key,
         fetch_chains_key,
@@ -146,8 +184,17 @@ async fn post_indexes(
 }
 
 #[get("/indexes/{public_id}")]
-async fn get_index(pool: Data<SqlitePool>, auth: Auth, public_id: Path<String>) -> Response<Index> {
+async fn get_index(
+    pool: Data<SqlitePool>,
+    #[cfg(feature = "multitenant")] auth: Auth,
+    public_id: Path<String>,
+) -> Response<Index> {
     let mut db = pool.acquire().await?;
+
+    #[cfg(not(feature = "multitenant"))]
+    let authz_id = SINGLE_TENANT_AUTHZ_ID;
+    #[cfg(feature = "multitenant")]
+    let authz_id = auth.authz_id;
 
     let index = sqlx::query_as!(
         Index,
@@ -159,7 +206,7 @@ async fn get_index(pool: Data<SqlitePool>, auth: Auth, public_id: Path<String>) 
             WHERE public_id = $1 AND authz_id = $2 AND deleted_at IS NULL
         "#,
         *public_id,
-        auth.authz_id,
+        authz_id,
     )
     .fetch_one(&mut db)
     .await?;
@@ -168,8 +215,17 @@ async fn get_index(pool: Data<SqlitePool>, auth: Auth, public_id: Path<String>) 
 }
 
 #[delete("/indexes/{public_id}")]
-async fn delete_index(pool: Data<SqlitePool>, auth: Auth, public_id: Path<String>) -> Response<()> {
+async fn delete_index(
+    pool: Data<SqlitePool>,
+    #[cfg(feature = "multitenant")] auth: Auth,
+    public_id: Path<String>,
+) -> Response<()> {
     let mut db = pool.acquire().await?;
+
+    #[cfg(not(feature = "multitenant"))]
+    let authz_id = SINGLE_TENANT_AUTHZ_ID;
+    #[cfg(feature = "multitenant")]
+    let authz_id = auth.authz_id;
 
     sqlx::query_as!(
         Index,
@@ -179,7 +235,7 @@ async fn delete_index(pool: Data<SqlitePool>, auth: Auth, public_id: Path<String
             WHERE public_id = $1 AND authz_id = $2
         "#,
         *public_id,
-        auth.authz_id,
+        authz_id,
     )
     .execute(&mut db)
     .await?;
@@ -322,8 +378,12 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Cannot run the database migrations");
 
+    #[cfg(feature = "multitenant")]
     let auth0 = Data::new(Auth0::from_env());
+
+    #[cfg(feature = "multitenant")]
     let backend = Data::new(Backend::from_env());
+
     let database_pool = Data::new(pool.clone());
 
     task::spawn(async move {
@@ -345,12 +405,11 @@ async fn main() -> std::io::Result<()> {
     });
 
     HttpServer::new(move || {
-        App::new()
+        #[allow(unused_mut)]
+        let mut app = App::new()
             .wrap(Cors::permissive())
             .wrap(Logger::default())
             .app_data(database_pool.clone())
-            .app_data(backend.clone())
-            .app_data(auth0.clone())
             .service(get_index)
             .service(get_indexes)
             .service(post_indexes)
@@ -358,7 +417,15 @@ async fn main() -> std::io::Result<()> {
             .service(fetch_entries)
             .service(fetch_chains)
             .service(upsert_entries)
-            .service(insert_chains)
+            .service(insert_chains);
+
+        #[cfg(feature = "multitenant")]
+        {
+            app = app.app_data(auth0.clone());
+            app = app.app_data(backend.clone());
+        }
+
+        app
     })
     .bind(("127.0.0.1", 8080))?
     .run()

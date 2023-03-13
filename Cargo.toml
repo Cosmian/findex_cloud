@@ -3,13 +3,14 @@ name = "findex_cloud"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+multitenant = ["alcoholic_jwt"]
 
 [dependencies]
 actix-cors = "0.6.4"
 actix-web = "4.2.1"
 actix-web-httpauth = "0.8.0"
-alcoholic_jwt = "4091.0.0"
+alcoholic_jwt = { version = "4091.0.0", optional = true }
 chrono = { version = "0.4.23", features = ["serde"] }
 cosmian_crypto_core = "7.0.0"
 cosmian_findex = "3.0.0"

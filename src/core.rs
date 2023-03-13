@@ -1,4 +1,7 @@
-use std::{env, future::Future, pin::Pin, time::SystemTime};
+#[cfg(feature = "multitenant")]
+use std::env;
+
+use std::{future::Future, pin::Pin, time::SystemTime};
 
 use actix_web::{
     dev::Payload,
@@ -12,7 +15,10 @@ use cosmian_findex::{kmac, parameters::KmacKey, KeyingMaterial};
 use serde::{Deserialize, Serialize};
 use sqlx::{types::chrono::NaiveDateTime, SqlitePool};
 
-use crate::{auth0::Auth, errors::Error};
+#[cfg(feature = "multitenant")]
+use crate::auth0::Auth;
+
+use crate::errors::Error;
 
 pub(crate) struct Id {
     pub(crate) id: i64,
@@ -129,10 +135,12 @@ impl FromRequest for Index {
     }
 }
 
+#[cfg(feature = "multitenant")]
 pub(crate) struct Backend {
     pub(crate) domain: String,
 }
 
+#[cfg(feature = "multitenant")]
 impl Backend {
     pub(crate) fn from_env() -> Self {
         Self {
@@ -144,11 +152,13 @@ impl Backend {
     }
 }
 
+#[cfg(feature = "multitenant")]
 #[derive(Debug, Deserialize, PartialEq)]
 pub(crate) struct BackendProject {
     pub(crate) uuid: String,
 }
 
+#[cfg(feature = "multitenant")]
 impl BackendProject {
     pub(crate) async fn get_projects(backend: &Backend, auth: &Auth) -> Result<Vec<Self>, Error> {
         Ok(reqwest::Client::new()
