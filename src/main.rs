@@ -31,6 +31,7 @@ use env_logger::Env;
 use rand::{distributions::Alphanumeric, Rng, RngCore, SeedableRng};
 use serde::Deserialize;
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
+use std::path::Path as FsPath;
 use tokio::{task, time};
 
 #[cfg(feature = "multitenant")]
@@ -365,7 +366,9 @@ async fn insert_chains(pool: Data<SqlitePool>, index: Index, bytes: Bytes) -> Re
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    dotenv::dotenv().expect("Cannot load env");
+    if FsPath::new(".env").exists() {
+        dotenv::dotenv().expect("Cannot load env");
+    }
 
     env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
     let pool = SqlitePoolOptions::new()

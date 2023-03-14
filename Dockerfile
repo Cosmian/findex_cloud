@@ -17,8 +17,16 @@ FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+RUN apt-get update && \
+    apt-get install --no-install-recommends -qq -y \
+    libssl-dev && \
+    rm -fr /var/lib/apt/lists/*
+
+
 COPY --from=builder /usr/bin/findex_cloud* /usr/bin/
 
 ENV DATABASE_URL=sqlite://database.sqlite
+
+RUN touch database.sqlite
 
 CMD ["findex_cloud"]
