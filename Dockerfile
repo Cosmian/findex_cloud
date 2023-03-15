@@ -6,9 +6,15 @@ WORKDIR /backend
 
 COPY ./ .
 
+RUN apt-get update && apt-get install -y curl && \
+    apt-get install -y build-essential && \
+    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && \
+    sudo apt-get install -y nodejs
+
 RUN sqlx database reset -y && \
     cargo build --release && \
-    cp target/release/findex_cloud /usr/bin/findex_cloud
+    cp target/release/findex_cloud /usr/bin/findex_cloud && \
+    cd static/ && npm install
 
 ####################################################################################################
 ## Final image

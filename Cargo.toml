@@ -8,6 +8,7 @@ multitenant = ["alcoholic_jwt"]
 
 [dependencies]
 actix-cors = "0.6.4"
+actix-files = "0.6.2"
 actix-web = "4.2.1"
 actix-web-httpauth = "0.8.0"
 alcoholic_jwt = { version = "4091.0.0", optional = true }

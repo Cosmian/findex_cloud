@@ -33,6 +33,7 @@ use serde::Deserialize;
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
 use std::path::Path as FsPath;
 use tokio::{task, time};
+use actix_files as fs;
 
 #[cfg(feature = "multitenant")]
 mod auth0;
@@ -420,7 +421,8 @@ async fn main() -> std::io::Result<()> {
             .service(fetch_entries)
             .service(fetch_chains)
             .service(upsert_entries)
-            .service(insert_chains);
+            .service(insert_chains)
+            .service(fs::Files::new("/", "./static").index_file("index.html"));
 
         #[cfg(feature = "multitenant")]
         {
@@ -430,7 +432,7 @@ async fn main() -> std::io::Result<()> {
 
         app
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", 8080))?
     .run()
     .await
 }

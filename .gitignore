@@ -2,3 +2,5 @@
 /databases/*
 database.sqlite*
 .env
+/static/node_modules
+.cargo_check

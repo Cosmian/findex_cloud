@@ -1,0 +1,148 @@
+body {
+  font-family: 'Open Sans', sans-serif;
+  color: #000000d9;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  height: 60px;
+  border-bottom: 1px solid #d9d9d9;
+  justify-content: space-between;
+  padding: 0px 50px 0px 10px;
+}
+
+img {
+  width: 133px;
+}
+
+h1 {
+  font-family: 'Montserrat', sans-serif;
+  margin-left: 50px;
+  font-size: 1.875rem;
+}
+
+h2 {
+  font-family: 'Montserrat', sans-serif;
+  margin: 0px 0px 20px 0px;
+}
+
+h3, .warning{
+  color: #e34319;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.block {
+  background-color: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  padding: 35px;
+  margin: 20px;
+  width: 80%;
+  overflow-wrap: anywhere;
+}
+
+.button {
+  display: inline-block;
+  border-radius: 6px;
+  font-family: Montserrat, Open Sans, sans-serif;
+  font-style: normal;
+  font-weight: 700;
+  font-size: .875rem;
+  line-height: 1em;
+  padding: 0.5rem 1.875em;
+  text-align: center;
+  box-shadow: none;
+  border: none;
+  text-shadow: none;
+  color: #fff;
+  cursor: pointer;
+  background-color: #e3431a;
+  background-image: linear-gradient(145deg, #fc7020 30%, rgba(255, 255, 255, 0) 100%);
+}
+
+input {
+  background: #ffffff;
+  border: 1px solid #bababa;
+  border-radius: 4px;
+  font-family: Montserrat, Open Sans, sans-serif;
+  font-weight: 400;
+  width: 50%;
+  text-indent: 5px;
+}
+
+.form {
+  display: flex;
+  justify-content: space-between;
+}
+
+ul {
+  padding: 0px;
+  width: 100%;
+}
+
+.columns {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  position: relative;
+  font-weight: 500;
+  text-align: left;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+  height: 40px;
+}
+
+.column {
+  border-left: 1px solid #f0f0f0;
+  border-right: 1px solid #f0f0f0;
+  flex-grow: 1;
+  padding-left: 30px;
+}
+
+.cell {
+  flex: 1 1 0px;
+  text-align: left;
+  padding-left: 30px;
+}
+
+.row:hover {
+  color: #e34319;
+}
+
+.line {
+  display: flex;
+}
+
+.delete {
+  margin-top: 20px;
+}
+
+button.row {
+  align-items: center;
+  justify-content: flex-start;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  background-color: white;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  outline: inherit;
+  display: flex;
+  width: 100%;
+  height: 40px;
+
+}
+
+.token {
+  margin: 10px;
+  padding: 5px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+}

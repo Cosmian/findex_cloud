@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500&family=Open+Sans&display=swap"
+        rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Findex demo</title>
+</head>
+<body>
+    <div class="header">
+        <img id="logo"
+            src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjI2IiBoZWlnaHQ9IjYwIiB2aWV3Qm94PSIwIDAgMjI2IDYwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cGF0aCBkPSJNODAuMDgyOSAxOS44MzU0QzgzLjY1NTggMTkuODM1NCA4Ni44NTkxIDIxLjU2MDMgODguNTgzOSAyNC4yNzA3TDg0LjY0MTQgMjYuNDg4NEM4My42NTU4IDI1LjEzMzIgODIuMDU0MSAyNC4xNDc1IDgwLjA4MjkgMjQuMTQ3NUM3Ni44Nzk2IDI0LjE0NzUgNzQuNjYyIDI2LjYxMTYgNzQuNjYyIDI5LjgxNDlDNzQuNjYyIDMxLjUzOTcgNzUuMTU0OCAzMi43NzE4IDc2LjE0MDQgMzQuMDAzOEM3Ny4yNDkyIDM1LjExMjYgNzguNDgxMyAzNS42MDU0IDgwLjA4MjkgMzUuNjA1NEM4Mi4wNTQxIDM1LjYwNTQgODMuNjU1OCAzNC43NDMgODQuNjQxNCAzMy4yNjQ2TDg4LjU4MzkgMzUuNjA1NEM4Ni44NTkxIDM4LjMxNTkgODMuNzc5IDQwLjA0MDggODAuMDgyOSA0MC4wNDA4Qzc0LjQxNTUgNDAuMTY0IDY5Ljg1NyAzNS42MDU0IDY5Ljk4MDIgMzAuMDYxM0M2OS44NTcgMjQuMjcwNyA3NC4yOTIzIDE5LjgzNTQgODAuMDgyOSAxOS44MzU0WiIgZmlsbD0iIzI5MkY1MiIvPgo8cGF0aCBkPSJNMTAxLjI3NCAxOS44MzU0QzEwNy4wNjQgMTkuODM1NCAxMTEuMzc2IDI0LjE0NzUgMTExLjM3NiAyOS44MTQ5QzExMS4zNzYgMzUuNDgyMiAxMDcuMDY0IDM5Ljc5NDMgMTAxLjI3NCAzOS43OTQzQzk1LjYwNjQgMzkuOTE3NiA5MS4wNDc5IDM1LjM1OSA5MS4xNzExIDI5LjgxNDlDOTEuMDQ3OSAyNC4yNzA3IDk1LjYwNjQgMTkuODM1NCAxMDEuMjc0IDE5LjgzNTRaTTEwMS4yNzQgMjQuMTQ3NUM5OC4wNzA1IDI0LjE0NzUgOTUuODUyOCAyNi42MTE2IDk1Ljg1MjggMjkuODE0OUM5NS44NTI4IDMxLjUzOTcgOTYuMzQ1NiAzMi43NzE4IDk3LjMzMTIgMzQuMDAzOEM5OC40NDAxIDM0Ljk4OTQgOTkuNjcyMSAzNS42MDU0IDEwMS4yNzQgMzUuNjA1NEMxMDIuOTk5IDM1LjYwNTQgMTA0LjIzMSAzNS4xMTI2IDEwNS4yMTYgMzQuMDAzOEMxMDYuMzI1IDMyLjg5NSAxMDYuODE4IDMxLjUzOTcgMTA2LjgxOCAyOS44MTQ5QzEwNi44MTggMjYuNjExNiAxMDQuNiAyNC4xNDc1IDEwMS4yNzQgMjQuMTQ3NVoiIGZpbGw9IiMyOTJGNTIiLz4KPHBhdGggZD0iTTExNy45MDcgMzMuMjY0NUMxMTguODkyIDM0Ljg2NjIgMTIwLjk4NyAzNS45NzUgMTIzLjQ1MSAzNS45NzVDMTI1Ljc5MiAzNS45NzUgMTI3LjY0IDM1LjIzNTggMTI3LjY0IDM0LjEyN0MxMjcuNjQgMzMuMDE4MSAxMjYuOSAzMi41MjUzIDEyMy45NDMgMzEuNzg2MUwxMjEuMTEgMzEuMTcwMUMxMTcuMTY3IDMwLjMwNzcgMTE1LjE5NiAyOC41ODI4IDExNS4xOTYgMjUuNzQ5MUMxMTUuMTk2IDIyLjE3NjIgMTE4LjY0NiAxOS43MTIyIDEyMy40NTEgMTkuNzEyMkMxMjUuMjk5IDE5LjcxMjIgMTI3LjAyNCAyMC4wODE4IDEyOC41MDIgMjAuOTQ0MkMxMjkuOTggMjEuODA2NiAxMzEuMDg5IDIyLjY2OTEgMTMxLjgyOCAyMy45MDExTDEyOC4yNTYgMjUuODcyM0MxMjcuMzkzIDI0LjUxNzEgMTI1LjI5OSAyMy41MzE1IDEyMy4yMDQgMjMuNTMxNUMxMjEuMTEgMjMuNTMxNSAxMTkuNjMxIDI0LjI3MDcgMTE5LjYzMSAyNS4zNzk1QzExOS42MzEgMjYuNDg4NCAxMjAuMzcxIDI2Ljk4MTIgMTIzLjMyNyAyNy41OTcyTDEyNi4xNjEgMjguMjEzMkMxMzAuMTA0IDI5LjA3NTYgMTMyLjA3NSAzMC44MDA1IDEzMi4wNzUgMzMuNjM0MUMxMzIuMDc1IDM3LjIwNyAxMjguMjU2IDM5LjY3MTEgMTIzLjIwNCAzOS42NzExQzEyMS4xMSAzOS42NzExIDExOS4yNjIgMzkuMTc4MyAxMTcuNjYgMzguMzE1OUMxMTYuMDU4IDM3LjQ1MzQgMTE0LjgyNiAzNi4zNDQ2IDExNC4wODcgMzUuMTEyNkwxMTcuOTA3IDMzLjI2NDVaIiBmaWxsPSIjMjkyRjUyIi8+CjxwYXRoIGQ9Ik0xNjcuMDY1IDM5LjQyNDZIMTYyLjI2VjI5LjA3NTVDMTYyLjI2IDI1Ljg3MjIgMTYwLjkwNCAyNC4xNDc0IDE1OC40NCAyNC4xNDc0QzE1NS45NzYgMjQuMTQ3NCAxNTQuMTI4IDI2LjM2NSAxNTQuMTI4IDI5LjU2ODNWMzkuNTQ3OEgxNDkuMzIzVjI5LjE5ODdDMTQ5LjMyMyAyNS45OTU0IDE0Ny45NjggMjQuMjcwNiAxNDUuNTA0IDI0LjI3MDZDMTQ0LjI3MiAyNC4yNzA2IDE0My4xNjMgMjQuNzYzNCAxNDIuNDI0IDI1Ljc0OUMxNDEuNjg1IDI2Ljg1NzkgMTQxLjE5MiAyOC4wODk5IDE0MS4xOTIgMjkuNTY4M1YzOS41NDc4SDEzNi4zODdWMjAuNDUxM0gxNDEuMTkyVjIzLjE2MThDMTQyLjMwMSAyMS4xOTA1IDE0NC4yNzIgMTkuOTU4NSAxNDYuNjEzIDE5Ljk1ODVDMTQ5LjU3IDE5Ljk1ODUgMTUxLjc4NyAyMS4zMTM3IDE1My4wMTkgMjMuNjU0NkMxNTQuMjUxIDIxLjMxMzcgMTU2LjQ2OSAxOS45NTg1IDE1OS40MjYgMTkuOTU4NUMxNjQuMTA4IDE5Ljk1ODUgMTY2Ljk0MSAyMy4xNjE4IDE2Ni45NDEgMjguNzA1OVYzOS40MjQ2SDE2Ny4wNjVaIiBmaWxsPSIjMjkyRjUyIi8+CjxwYXRoIGQ9Ik0xNzQuNzA0IDEyLjA3MzZDMTc2LjQyOCAxMi4wNzM2IDE3Ny42NiAxMy4zMDU3IDE3Ny42NiAxNS4wMzA1QzE3Ny42NiAxNi43NTU0IDE3Ni40MjggMTcuOTg3NCAxNzQuNzA0IDE3Ljk4NzRDMTcyLjk3OSAxNy45ODc0IDE3MS43NDcgMTYuNzU1NCAxNzEuNzQ3IDE1LjAzMDVDMTcxLjc0NyAxMy4zMDU3IDE3Mi45NzkgMTIuMDczNiAxNzQuNzA0IDEyLjA3MzZaTTE3Ny4xNjggMzkuNDI0OEgxNzIuMzYzVjIwLjQ1MTVIMTc3LjE2OFYzOS40MjQ4WiIgZmlsbD0iIzI5MkY1MiIvPgo8cGF0aCBkPSJNMjAxLjgwOCAyMC40NTE3VjM5LjQyNUgxOTcuMDAzVjM2LjgzNzdDMTk1Ljc3MSAzOC45MzIyIDE5My40MyA0MC4wNDEgMTkwLjg0MyA0MC4wNDFDMTg1LjU0NSA0MC4wNDEgMTgxLjYwMiAzNS42MDU3IDE4MS42MDIgMzAuMDYxNUMxODEuNDc5IDI0LjUxNzQgMTg1LjU0NSAxOS45NTg5IDE5MC44NDMgMjAuMDgyMUMxOTMuNDMgMjAuMDgyMSAxOTUuNzcxIDIxLjE5MDkgMTk3LjAwMyAyMy4yODU0VjIwLjY5ODFIMjAxLjgwOFYyMC40NTE3Wk0xOTEuNDU5IDI0LjE0NzhDMTg5Ljg1NyAyNC4xNDc4IDE4OC41MDIgMjQuNjQwNiAxODcuNTE2IDI1Ljg3MjZDMTg2LjUzMSAyNi45ODE1IDE4Ni4wMzggMjguMzM2NyAxODYuMDM4IDMwLjA2MTVDMTg2LjAzOCAzMy4yNjQ4IDE4OC4yNTUgMzUuODUyMSAxOTEuNDU5IDM1Ljg1MjFDMTk0LjY2MiAzNS44NTIxIDE5Ni44OCAzMy41MTEyIDE5Ni44OCAzMC4wNjE1QzE5Ni44OCAyNi4zNjU0IDE5NC42NjIgMjQuMTQ3OCAxOTEuNDU5IDI0LjE0NzhaIiBmaWxsPSIjMjkyRjUyIi8+CjxwYXRoIGQ9Ik0yMjUuODMyIDM5LjQyNDZIMjIxLjAyN1YyOS4wNzU1QzIyMS4wMjcgMjUuODcyMiAyMTkuNTQ4IDI0LjE0NzQgMjE2LjcxNSAyNC4xNDc0QzIxMy44ODEgMjQuMTQ3NCAyMTEuNzg2IDI2LjI0MTggMjExLjc4NiAyOS40NDUxVjM5LjQyNDZIMjA2Ljk4MlYyMC40NTEzSDIxMS43ODZWMjMuMTYxOEMyMTIuODk1IDIxLjE5MDUgMjE0Ljk5IDE5Ljk1ODUgMjE3LjgyMyAxOS45NTg1QzIyMi43NTIgMTkuOTU4NSAyMjUuODMyIDIzLjE2MTggMjI1LjgzMiAyOC43MDU5VjM5LjQyNDZaIiBmaWxsPSIjMjkyRjUyIi8+CjxwYXRoIGQ9Ik00MC4xNjQzIDYwSDE5LjcxMjVDMTQuNTM4IDYwIDEwLjIyNTkgNTUuNjg3OSAxMC4yMjU5IDUwLjUxMzNDMTAuMjI1OSA1MC4xNDM3IDkuODU2MjYgNDkuNzc0MSA5LjQ4NjY1IDQ5Ljc3NDFDNC4xODg5MSA0OS43NzQxIDAgNDUuNDYyIDAgNDAuMjg3NVYxOS43MTI1QzAgMTQuNTM4IDQuMzEyMTEgMTAuMjI1OSA5LjQ4NjY1IDEwLjIyNTlDOS45Nzk0NiAxMC4yMjU5IDEwLjIyNTkgOS44NTYyNiAxMC4yMjU5IDkuNDg2NjVDMTAuMjI1OSA0LjMxMjEyIDE0LjUzOCAwIDE5LjcxMjUgMEg0MC4xNjQzQzQ1LjMzODggMCA0OS42NTA5IDQuMzEyMTIgNDkuNjUwOSA5LjQ4NjY1VjEwLjcxODdDNDkuNjUwOSAxNS44OTMyIDQ1LjMzODggMjAuMjA1MyA0MC4xNjQzIDIwLjIwNTNIMjAuODIxNEMyMC40NTE3IDIwLjIwNTMgMjAuMDgyMSAyMC41NzQ5IDIwLjA4MjEgMjAuOTQ0NlYzOC45MzIyQzIwLjA4MjEgMzkuMzAxOCAyMC40NTE3IDM5LjY3MTUgMjAuODIxNCAzOS42NzE1SDQwLjA0MTFDNDUuMjE1NiAzOS42NzE1IDQ5LjUyNzcgNDMuOTgzNiA0OS41Mjc3IDQ5LjE1ODFWNTAuMzkwMUM0OS42NTA5IDU1LjY4NzkgNDUuNDYyIDYwIDQwLjE2NDMgNjBaTTE5LjcxMjUgNC41NTg1MkMxNy4wMDIxIDQuNTU4NTIgMTQuOTA3NiA2Ljc3NjE4IDE0LjkwNzYgOS4zNjM0NUMxNC45MDc2IDEyLjQ0MzUgMTIuNDQzNSAxNC43ODQ0IDkuNDg2NjUgMTQuNzg0NEM2Ljc3NjE4IDE0Ljc4NDQgNC42ODE3MiAxNy4wMDIxIDQuNjgxNzIgMTkuNTg5M1Y0MC4wNDExQzQuNjgxNzIgNDIuNzUxNSA2Ljg5OTM4IDQ0Ljg0NiA5LjQ4NjY1IDQ0Ljg0NkMxMi41NjY3IDQ0Ljg0NiAxNC45MDc2IDQ3LjMxMDEgMTQuOTA3NiA1MC4yNjY5QzE0LjkwNzYgNTIuOTc3NCAxNy4xMjUzIDU1LjA3MTkgMTkuNzEyNSA1NS4wNzE5SDQwLjE2NDNDNDIuODc0NyA1NS4wNzE5IDQ0Ljk2OTIgNTIuODU0MiA0NC45NjkyIDUwLjI2NjlWNDkuMDM0OUM0NC45NjkyIDQ2LjMyNDQgNDIuNzUxNSA0NC4yMyA0MC4xNjQzIDQ0LjIzSDIwLjgyMTRDMTcuNzQxMyA0NC4yMyAxNS40MDA0IDQxLjc2NTkgMTUuNDAwNCAzOC44MDlWMjAuOTQ0NkMxNS40MDA0IDE3Ljg2NDUgMTcuODY0NSAxNS41MjM2IDIwLjgyMTQgMTUuNTIzNkg0MC4wNDExQzQyLjc1MTUgMTUuNTIzNiA0NC44NDYgMTMuMzA2IDQ0Ljg0NiAxMC43MTg3VjkuNDg2NjVDNDQuODQ2IDYuNzc2MTggNDIuNjI4MyA0LjY4MTcyIDQwLjA0MTEgNC42ODE3MkgxOS43MTI1VjQuNTU4NTJaIiBmaWxsPSJ1cmwoI3BhaW50MF9saW5lYXJfMjM0XzExMDApIi8+CjxkZWZzPgo8bGluZWFyR3JhZGllbnQgaWQ9InBhaW50MF9saW5lYXJfMjM0XzExMDAiIHgxPSIxOC41MDE3IiB5MT0iMTcuOTIwNCIgeDI9IjEwOC4yNzkiIHkyPSIxMTYuMjQ3IiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CjxzdG9wIHN0b3AtY29sb3I9IiNGRjhDNEEiLz4KPHN0b3Agb2Zmc2V0PSIwLjExOTYiIHN0b3AtY29sb3I9IiNGRjdBNDciLz4KPHN0b3Agb2Zmc2V0PSIwLjM1OTIiIHN0b3AtY29sb3I9IiNGRjRDNDAiLz4KPHN0b3Agb2Zmc2V0PSIwLjY3OTciIHN0b3AtY29sb3I9IiNGRTA1MzQiLz4KPC9saW5lYXJHcmFkaWVudD4KPC9kZWZzPgo8L3N2Zz4K"
+            alt="Cosmian" width="234px">
+        <h1>Findex</h1>
+
+    </div>
+
+    <div class="page">
+        <div class="block">
+            <h2>Create an index</h2>
+            <form id="new_index" class="form">
+                <input type="text" name="name" id="name" placeholder="Index name" required>
+                <button class="button">Create index</button>
+            </form>
+        </div>
+
+        <div id="creation" class="block" style="display:none;">
+            <h2>Index created</h3>
+            <h3 id="nameCreatedIndex">Name</h3>
+            <div>This is the token associated with your created index:</div>
+            <div id="token" class="token">Token</div>
+            <div class="warning">Please make sure to store it safely - as we won't be able to retrieve it for you.</div>
+            <button id="done" class="button delete">Done</button>
+        </div>
+
+        <div id="details" class="block" style="display:none;">
+            <h2>Index overview</h3>
+            <h3 id="nameIndex">Name</h3>
+            <div id="size">Size</div>
+            <div id="id">Id</div>
+            <button id="delete" class="button delete">Delete index</button>
+        </div>
+
+        <div class="block">
+            <h2>Index list</h2>
+            <ul id="list">
+                <div class="columns">
+                    <div class="column">Name</div>
+                    <div class="column">Size</div>
+                    <div class="column">Creation</div>
+                </div>
+            </ul>
+        </div>
+    </div>
+
+    <script type="module">
+        import { FindexCloud } from "/node_modules/cloudproof_js/dist/es/index.js";
+        const { generateNewToken } = await FindexCloud()
+
+        const indexNameInput = document.getElementById('name');
+        let indexId;
+        let indexName;
+        let indexSize;
+        let indexes = [];
+
+        const fetchIndexes = async () => {
+            const response = await fetch("http://0.0.0.0:8080/indexes", {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+            })
+            let indexes = await response.json()
+
+            return indexes.map((index) => {
+                return { id: index.public_id, name: index.name, size: index.size, created_at: index.created_at }
+            })
+        }
+
+        const addLineIndex = (item) => {
+            const div = document.createElement('button');
+
+            Object.keys(item).forEach((key) => {
+                if (key === "id") {
+                    div.setAttribute("id", item[key])
+                } else {
+                    const inner_div = document.createElement('div');
+                    const parsedDate = Date.parse(item[key])
+                    const value = isNaN(item[key]) && !isNaN(parsedDate) ? new Date(item[key]).toLocaleString() : item[key]
+                    const text = document.createTextNode(value);
+                    inner_div.classList.add("cell");
+                    inner_div.appendChild(text);
+                    div.appendChild(inner_div);
+                }
+            })
+            div.classList.add("row");
+            document.getElementById("list").appendChild(div);
+        }
+
+        indexes = await fetchIndexes();
+        indexes.forEach(function (item) {
+            addLineIndex(item);
+        });
+
+        document.getElementById('new_index').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            let response = await fetch("http://0.0.0.0:8080/indexes", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: indexNameInput.value,
+                }),
+            })
+
+            let index = await response.json();
+            const item = { id: index.public_id, name: index.name, size: 0, created_at: index.created_at }
+
+            const token = generateNewToken(
+                index.public_id,
+                Uint8Array.from(index.fetch_entries_key),
+                Uint8Array.from(index.fetch_chains_key),
+                Uint8Array.from(index.upsert_entries_key),
+                Uint8Array.from(index.insert_chains_key),
+            )
+
+            document.getElementById("creation").style.display = "block";
+            indexName = indexNameInput.value;
+            document.getElementById('nameCreatedIndex').textContent = indexName;
+            document.getElementById('token').textContent = token;
+            addLineIndex(item);
+            indexNameInput.value = '';
+        })
+
+        document.getElementById('done').addEventListener('click', async () => {
+            window.location.reload();
+        })
+
+        document.getElementById('delete').addEventListener('click', async () => {
+            const response = await fetch(`http://0.0.0.0:8080/indexes/${indexId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            window.location.reload();
+        })
+
+        document
+            .getElementById('list')
+            .addEventListener('click', ({ target }) => {
+                const currentRow = target.closest('button');
+                if (currentRow) {
+                    indexId = currentRow.id;
+                    indexName = currentRow.childNodes[0].textContent;
+                    indexSize = currentRow.childNodes[1].textContent;
+                    document.getElementById("details").style.display = "block";
+                    document.getElementById('nameIndex').textContent = indexName;
+                    document.getElementById('size').textContent = `Size: ${indexSize} bytes`;
+                    document.getElementById('id').textContent = `Index ID: ${indexId}`;
+                }
+            });
+    </script>
+</body>
+</html>
