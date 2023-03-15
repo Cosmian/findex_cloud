@@ -13,8 +13,8 @@ RUN apt-get update && apt-get install -y curl && \
 
 RUN sqlx database reset -y && \
     cargo build --release && \
-    cp target/release/findex_cloud /usr/bin/findex_cloud && \
-    cd static/ && npm install
+    cd static/ && npm install && cd .. && \
+    cp target/release/findex_cloud /usr/bin/findex_cloud
 
 ####################################################################################################
 ## Final image
@@ -23,13 +23,18 @@ FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+WORKDIR /backend
+
 RUN apt-get update && \
     apt-get install --no-install-recommends -qq -y \
     libssl-dev && \
     rm -fr /var/lib/apt/lists/*
 
+RUN mkdir static
 
 COPY --from=builder /usr/bin/findex_cloud* /usr/bin/
+
+COPY --from=builder /backend/static/ /backend/static/
 
 ENV DATABASE_URL=sqlite://database.sqlite
 
