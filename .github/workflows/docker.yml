@@ -1,9 +1,6 @@
 name: Findex Cloud docker image
 
-on:
-  push:
-    branches:
-      - "*"
+on: tag
 
 env:
   REGISTRY: ghcr.io
@@ -47,8 +44,9 @@ jobs:
         uses: docker/build-push-action@v3
         with:
           context: .
-          push: ${{ contains(github.ref, 'master') }}
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
           tags: |
             ${{ env.IMAGE }}:${{ github.sha }}
-            ${{ env.IMAGE }}:${{ steps.build_date.outputs.BUILD_DATE }}
+            ${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.IMAGE }}:latest
           labels: ${{ steps.meta.outputs.labels }}
