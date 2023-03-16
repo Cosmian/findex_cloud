@@ -1,6 +1,6 @@
 ## Builder
 ####################################################################################################
-FROM gitlab.cosmian.com:5000/core/ci-rust-20-04:20220929153432 AS builder
+FROM rust:bullseye AS builder
 
 WORKDIR /backend
 
@@ -8,10 +8,11 @@ COPY ./ .
 
 RUN apt-get update && apt-get install -y curl && \
     apt-get install -y build-essential && \
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && \
-    sudo apt-get install -y nodejs
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs
 
-RUN sqlx database reset -y && \
+RUN cargo install sqlx-cli && \
+    sqlx database reset -y && \
     cargo build --release && \
     cd static/ && npm install && cd .. && \
     cp target/release/findex_cloud /usr/bin/findex_cloud
@@ -19,7 +20,7 @@ RUN sqlx database reset -y && \
 ####################################################################################################
 ## Final image
 ####################################################################################################
-FROM ubuntu:20.04
+FROM debian:bullseye
 
 ENV DEBIAN_FRONTEND=noninteractive
 
