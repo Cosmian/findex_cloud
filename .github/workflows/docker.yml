@@ -1,6 +1,6 @@
 name: Findex Cloud docker image
 
-on: tag
+on: push
 
 env:
   REGISTRY: ghcr.io
@@ -16,10 +16,6 @@ jobs:
       IMAGE: ghcr.io/cosmian/findex_cloud
 
     steps:
-      - name: Build date
-        id: build_date
-        run: |
-          echo "BUILD_DATE=$(date -u +'%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
       - name: Checkout
         uses: actions/checkout@v3
 
