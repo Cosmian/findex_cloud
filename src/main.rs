@@ -41,7 +41,7 @@ mod core;
 mod errors;
 
 #[cfg(not(feature = "multitenant"))]
-const SINGLE_TENANT_PROJECT_UUID: &str = "585ae6a7-f1a3-430b-850e-8bd3a308c321";
+const SINGLE_TENANT_PROJECT_UUID: &str = "SINGLE_TENANT_PROJECT_UUID";
 
 #[cfg(not(feature = "multitenant"))]
 const SINGLE_TENANT_AUTHZ_ID: &str = "SINGLE_TENANT_AUTHZ_ID";
@@ -212,6 +212,7 @@ async fn get_index(
     )
     .fetch_one(&mut db)
     .await?;
+
 
     Ok(Json(index))
 }
