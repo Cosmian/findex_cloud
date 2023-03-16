@@ -23,7 +23,7 @@ pub type ResponseBytes = Result<HttpResponse, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    Internal,
+    Sqlx(sqlx::Error),
     InvalidSignature,
     WrongEncoding,
     Json,
@@ -81,7 +81,7 @@ impl ResponseError for Error {
         log::error!("{self:?}");
 
         match *self {
-            Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Sqlx(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidSignature => StatusCode::FORBIDDEN,
             Self::WrongEncoding => StatusCode::BAD_REQUEST,
             Self::Json => StatusCode::BAD_REQUEST,
@@ -120,8 +120,8 @@ impl ResponseError for Error {
 }
 
 impl From<sqlx::Error> for Error {
-    fn from(_: sqlx::Error) -> Self {
-        Error::Internal
+    fn from(err: sqlx::Error) -> Self {
+        Error::Sqlx(err)
     }
 }
 
