@@ -11,6 +11,8 @@ use crate::errors::Error;
 use actix_web::web::PayloadConfig;
 #[cfg(feature = "multitenant")]
 use actix_web::web::Query;
+use sqlx::migrate::MigrateDatabase;
+use sqlx::Sqlite;
 
 use crate::{
     core::{check_body_signature, Id, Index},
@@ -373,15 +375,26 @@ async fn main() -> std::io::Result<()> {
     }
 
     env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
-    let pool = SqlitePoolOptions::new()
-        .connect("sqlite://database.sqlite")
+
+    let db_url = "sqlite://data/database.sqlite";
+
+    if !Sqlite::database_exists(db_url)
         .await
-        .expect("Cannot connect to database.sqlite");
+        .unwrap_or_else(|e| panic!("Cannot check database existance at {db_url} ({e})"))
+    {
+        Sqlite::create_database(db_url)
+            .await
+            .unwrap_or_else(|e| panic!("Cannot create database {db_url} ({e})"));
+    }
+    let pool = SqlitePoolOptions::new()
+        .connect(db_url)
+        .await
+        .unwrap_or_else(|e| panic!("Cannot connect to database at {db_url} ({e})"));
 
     sqlx::migrate!()
         .run(&pool)
         .await
-        .expect("Cannot run the database migrations");
+        .unwrap_or_else(|e| panic!("Cannot run migration on database at {db_url} ({e})"));
 
     #[cfg(feature = "multitenant")]
     let auth0 = Data::new(Auth0::from_env());

@@ -1,6 +1,5 @@
 /target
-/databases/*
-database.sqlite*
+/data/*
 .env
 /static/node_modules
 .cargo_check
