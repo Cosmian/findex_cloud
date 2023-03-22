@@ -401,8 +401,8 @@ async fn main() -> std::io::Result<()> {
                 "INSERT INTO stats (index_id, chains_size, entries_size)
                     SELECT index_id, SUM(chain_size) as chains_size, SUM(entry_size) as entries_size
                         FROM (
-                                    SELECT index_id, LENGTH(value) as chain_size, 0 as entry_size FROM chains
-                            UNION   SELECT index_id, LENGTH(value) as entry_size, 0 as chain_size FROM entries
+                                       SELECT index_id, LENGTH(value) as chain_size, 0 as entry_size FROM chains
+                            UNION ALL  SELECT index_id, LENGTH(value) as entry_size, 0 as chain_size FROM entries
                         ) as lengths
                     GROUP BY index_id",
             ).execute(&mut db).await.unwrap();
