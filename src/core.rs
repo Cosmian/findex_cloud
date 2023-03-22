@@ -85,13 +85,7 @@ pub(crate) fn check_body_signature(
             .derive_kmac_key(index_id.as_bytes());
 
     let signature_computed = kmac!(CALLBACK_SIGNATURE_LENGTH, &key, &timestamp_bytes, &data);
-    dbg!(
-        original_length,
-        timestamp_bytes,
-        signature_received,
-        signature_computed,
-        key,
-    );
+
     if signature_received != signature_computed {
         return Err(Error::InvalidSignature);
     }
