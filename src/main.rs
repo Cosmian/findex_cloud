@@ -8,6 +8,7 @@ use crate::auth0::{Auth, Auth0};
 use crate::core::{Backend, BackendProject};
 #[cfg(feature = "multitenant")]
 use crate::errors::Error;
+use actix_web::web::PayloadConfig;
 #[cfg(feature = "multitenant")]
 use actix_web::web::Query;
 
@@ -16,6 +17,7 @@ use crate::{
     errors::{Response, ResponseBytes},
 };
 use actix_cors::Cors;
+use actix_files as fs;
 use actix_web::{
     delete, get,
     middleware::Logger,
@@ -33,7 +35,6 @@ use serde::Deserialize;
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
 use std::path::Path as FsPath;
 use tokio::{task, time};
-use actix_files as fs;
 
 #[cfg(feature = "multitenant")]
 mod auth0;
@@ -212,7 +213,6 @@ async fn get_index(
     )
     .fetch_one(&mut db)
     .await?;
-
 
     Ok(Json(index))
 }
@@ -415,6 +415,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Cors::permissive())
             .wrap(Logger::default())
             .app_data(database_pool.clone())
+            .app_data(PayloadConfig::new(50_000_000))
             .service(get_index)
             .service(get_indexes)
             .service(post_indexes)
