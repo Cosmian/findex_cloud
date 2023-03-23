@@ -396,13 +396,8 @@ async fn main() -> std::io::Result<()> {
         .await
         .unwrap_or_else(|e| panic!("Cannot run migration on database at {db_url} ({e})"));
 
-    #[cfg(feature = "multitenant")]
-    let auth0 = Data::new(Auth0::from_env());
-
-    #[cfg(feature = "multitenant")]
-    let backend = Data::new(Backend::from_env());
-
-    let database_pool = Data::new(pool.clone());
+    // Save a cloned pool before async move `pool` inside the task::spawn.
+    let pool_cloned = pool.clone();
 
     task::spawn(async move {
         let mut interval = time::interval(Duration::from_secs(60 * 60));
@@ -422,7 +417,22 @@ async fn main() -> std::io::Result<()> {
         }
     });
 
-    HttpServer::new(move || {
+    match start_server(pool_cloned.clone(), true).await {
+        Ok(_) => Ok(()),
+        Err(_) => start_server(pool_cloned, false).await,
+    }
+}
+
+async fn start_server(pool: SqlitePool, ipv6: bool) -> std::io::Result<()> {
+    #[cfg(feature = "multitenant")]
+    let auth0 = Data::new(Auth0::from_env());
+
+    #[cfg(feature = "multitenant")]
+    let backend = Data::new(Backend::from_env());
+
+    let database_pool = Data::new(pool);
+
+    let mut server = HttpServer::new(move || {
         #[allow(unused_mut)]
         let mut app = App::new()
             .wrap(Cors::permissive())
@@ -447,8 +457,12 @@ async fn main() -> std::io::Result<()> {
 
         app
     })
-    .bind(("0.0.0.0", 8080))?
-    .bind("[::1]:8080")?
-    .run()
-    .await
+    .bind(("0.0.0.0", 8080))?;
+
+    // If IPv6 is not available do not bind it (for example inside Docker).
+    if ipv6 {
+        server = server.bind("[::1]:8080")?;
+    }
+
+    server.run().await
 }
