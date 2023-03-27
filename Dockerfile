@@ -37,8 +37,9 @@ COPY --from=builder /usr/bin/findex_cloud* /usr/bin/
 
 COPY --from=builder /backend/static/ /backend/static/
 
-ENV DATABASE_URL=sqlite://database.sqlite
+ENV DATABASE_URL=sqlite://data/database.sqlite
 
-RUN touch database.sqlite
+RUN mkdir data
+RUN touch data/database.sqlite
 
 CMD ["findex_cloud"]
