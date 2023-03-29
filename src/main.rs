@@ -1,16 +1,17 @@
 #![feature(iter_next_chunk)]
 
+use std::iter::zip;
 use std::time::Duration;
 
 #[cfg(feature = "multitenant")]
 use crate::auth0::{Auth, Auth0};
 #[cfg(feature = "multitenant")]
 use crate::core::{Backend, BackendProject};
-#[cfg(feature = "multitenant")]
 use crate::errors::Error;
 use actix_web::web::PayloadConfig;
 #[cfg(feature = "multitenant")]
 use actix_web::web::Query;
+use rocksdb::{Options, TransactionDB, TransactionDBOptions};
 use sqlx::migrate::MigrateDatabase;
 use sqlx::Sqlite;
 
@@ -34,7 +35,7 @@ use cosmian_findex::{parameters::UID_LENGTH, CoreError, EncryptedTable, Uid, Ups
 use env_logger::Env;
 use rand::{distributions::Alphanumeric, Rng, RngCore, SeedableRng};
 use serde::Deserialize;
-use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
+use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
 use std::path::Path as FsPath;
 use tokio::{task, time};
 
@@ -213,10 +214,16 @@ async fn get_index(
         *public_id,
         authz_id,
     )
-    .fetch_one(&mut db)
+    .fetch_optional(&mut db)
     .await?;
 
-    Ok(Json(index))
+    if let Some(index) = index {
+        Ok(Json(index))
+    } else {
+        Err(Error::BadRequest(format!(
+            "Unknown index for ID {public_id}"
+        )))
+    }
 }
 
 #[delete("/indexes/{public_id}")]
@@ -249,31 +256,23 @@ async fn delete_index(
 }
 
 #[post("/indexes/{public_id}/fetch_entries")]
-async fn fetch_entries(pool: Data<SqlitePool>, index: Index, bytes: Bytes) -> ResponseBytes {
-    let mut db = pool.acquire().await?;
-
+async fn fetch_entries(index: Index, bytes: Bytes, indexes: Data<TransactionDB>) -> ResponseBytes {
     let bytes = check_body_signature(bytes, &index.public_id, &index.fetch_entries_key)?;
     let body = deserialize_set::<CoreError, Uid<UID_LENGTH>>(&bytes)?;
 
-    let commas = vec!["?"; body.len()].join(",");
-    let sql = format!("SELECT * FROM entries WHERE index_id = ? AND uid IN ({commas})");
-    let mut query = sqlx::query(&sql).bind(index.id);
+    let mut uids_and_values = EncryptedTable::<UID_LENGTH>::with_capacity(body.len());
 
-    for uid in &body {
-        query = query.bind(uid.as_ref());
+    let values = indexes.multi_get(
+        body.iter()
+            .map(|uid| [&index.id.to_be_bytes(), uid.as_ref()].concat()),
+    );
+
+    for (uid, value) in zip(body.into_iter(), values.into_iter()) {
+        let value = value.unwrap();
+        if let Some(value) = value {
+            uids_and_values.insert(uid, value);
+        }
     }
-
-    let rows = query.fetch_all(&mut db).await?;
-
-    let uids_and_values: EncryptedTable<UID_LENGTH> = rows
-        .into_iter()
-        .map(|row| {
-            (
-                Uid::<UID_LENGTH>::try_from_bytes(row.get("uid")).unwrap(),
-                row.get("value"),
-            )
-        })
-        .collect();
 
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
@@ -281,31 +280,23 @@ async fn fetch_entries(pool: Data<SqlitePool>, index: Index, bytes: Bytes) -> Re
 }
 
 #[post("/indexes/{public_id}/fetch_chains")]
-async fn fetch_chains(pool: Data<SqlitePool>, index: Index, bytes: Bytes) -> ResponseBytes {
-    let mut db = pool.acquire().await?;
-
+async fn fetch_chains(index: Index, bytes: Bytes, indexes: Data<TransactionDB>) -> ResponseBytes {
     let bytes = check_body_signature(bytes, &index.public_id, &index.fetch_chains_key)?;
     let body = deserialize_set::<CoreError, Uid<UID_LENGTH>>(&bytes)?;
 
-    let commas = vec!["?"; body.len()].join(",");
-    let sql = format!("SELECT * FROM chains WHERE index_id = ? AND uid IN ({commas})");
-    let mut query = sqlx::query(&sql).bind(index.id);
+    let mut uids_and_values = EncryptedTable::<UID_LENGTH>::with_capacity(body.len());
 
-    for uid in &body {
-        query = query.bind(uid.as_ref());
+    let values = indexes.multi_get(
+        body.iter()
+            .map(|uid| [&index.id.to_be_bytes(), uid.as_ref()].concat()),
+    );
+
+    for (uid, value) in zip(body.into_iter(), values.into_iter()) {
+        let value = value.unwrap();
+        if let Some(value) = value {
+            uids_and_values.insert(uid, value);
+        }
     }
-
-    let rows = query.fetch_all(&mut db).await?;
-
-    let uids_and_values: EncryptedTable<UID_LENGTH> = rows
-        .into_iter()
-        .map(|row| {
-            (
-                Uid::<UID_LENGTH>::try_from_bytes(row.get("uid")).unwrap(),
-                row.get("value"),
-            )
-        })
-        .collect();
 
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
@@ -313,31 +304,46 @@ async fn fetch_chains(pool: Data<SqlitePool>, index: Index, bytes: Bytes) -> Res
 }
 
 #[post("/indexes/{public_id}/upsert_entries")]
-async fn upsert_entries(pool: Data<SqlitePool>, bytes: Bytes, index: Index) -> ResponseBytes {
-    let mut db = pool.acquire().await?;
-
+async fn upsert_entries(bytes: Bytes, index: Index, indexes: Data<TransactionDB>) -> ResponseBytes {
     let bytes = check_body_signature(bytes, &index.public_id, &index.upsert_entries_key)?;
     let body = UpsertData::<UID_LENGTH>::try_from_bytes(&bytes)?;
 
-    let mut rejected = EncryptedTable::with_capacity(1);
+    let mut rejected = EncryptedTable::<UID_LENGTH>::with_capacity(1);
 
     for (uid, (old_value, new_value)) in body.iter() {
-        let uid_bytes = uid.as_ref();
-        let results = sqlx::query!("INSERT INTO entries (index_id, uid, value) VALUES (?, ?, ?) ON CONFLICT (index_id, uid)  DO UPDATE SET value = ? WHERE value = ?", index.id, uid_bytes, new_value, new_value, old_value).execute(&mut db).await?;
+        let key = [&index.id.to_be_bytes(), uid.as_ref()].concat();
 
-        if results.rows_affected() == 0 {
-            let new_value = sqlx::query!(
-                "SELECT * FROM entries WHERE index_id = ? AND uid = ?",
-                index.id,
-                uid_bytes,
-            )
-            .fetch_one(&mut db)
-            .await?;
+        let transaction = indexes.transaction();
 
-            rejected.insert(
-                Uid::<UID_LENGTH>::try_from_bytes(&new_value.uid).unwrap(),
-                new_value.value,
-            );
+        let existing_value = match transaction.get_for_update(&key, true) {
+            Ok(existing_value) => existing_value,
+            Err(err) if err.as_ref() == "Operation timed out: Timeout waiting to lock key" => {
+                transaction.rollback()?;
+
+                let mut retry = 3;
+                let value = loop {
+                    if let Some(value) = indexes.get(&key)? {
+                        break value;
+                    }
+
+                    retry -= 1;
+                    if retry <= 0 {
+                        return Err(Error::Rocksdb(err));
+                    }
+                };
+
+                rejected.insert(uid.clone(), value);
+                continue;
+            }
+            err => err?,
+        };
+
+        if existing_value == *old_value {
+            transaction.put(&key, new_value).unwrap();
+            transaction.commit().unwrap();
+        } else {
+            transaction.rollback().unwrap();
+            rejected.insert(uid.clone(), existing_value.unwrap());
         }
     }
 
@@ -347,22 +353,14 @@ async fn upsert_entries(pool: Data<SqlitePool>, bytes: Bytes, index: Index) -> R
 }
 
 #[post("/indexes/{public_id}/insert_chains")]
-async fn insert_chains(pool: Data<SqlitePool>, index: Index, bytes: Bytes) -> Response<()> {
-    let mut db = pool.acquire().await?;
-
+async fn insert_chains(index: Index, bytes: Bytes, indexes: Data<TransactionDB>) -> Response<()> {
     let bytes = check_body_signature(bytes, &index.public_id, &index.insert_chains_key)?;
     let body = EncryptedTable::<UID_LENGTH>::try_from_bytes(&bytes)?;
 
     for (uid, value) in body.iter() {
-        let uid_bytes = uid.as_ref();
-        sqlx::query!(
-            "INSERT OR REPLACE INTO chains (index_id, uid, value) VALUES(?, ?, ?)",
-            index.id,
-            uid_bytes,
-            value,
-        )
-        .execute(&mut db)
-        .await?;
+        indexes
+            .put([&index.id.to_be_bytes(), uid.as_ref()].concat(), value)
+            .unwrap();
     }
 
     Ok(Json(()))
@@ -432,12 +430,25 @@ async fn start_server(pool: SqlitePool, ipv6: bool) -> std::io::Result<()> {
 
     let database_pool = Data::new(pool);
 
+    let indexes_url = "data/indexes_rocksdb";
+
+    let mut opts = Options::default();
+    opts.create_if_missing(true);
+    let mut txn_db_opts = TransactionDBOptions::default();
+    txn_db_opts.set_txn_lock_timeout(10);
+
+    let transaction_db: TransactionDB =
+        TransactionDB::open(&opts, &txn_db_opts, indexes_url).unwrap();
+
+    let db = Data::new(transaction_db);
+
     let mut server = HttpServer::new(move || {
         #[allow(unused_mut)]
         let mut app = App::new()
             .wrap(Cors::permissive())
             .wrap(Logger::default())
             .app_data(database_pool.clone())
+            .app_data(db.clone())
             .app_data(PayloadConfig::new(50_000_000))
             .service(get_index)
             .service(get_indexes)

@@ -24,7 +24,7 @@ pub(crate) struct Id {
     pub(crate) id: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub(crate) struct Index {
     #[serde(skip_serializing)]
     pub(crate) id: i64,
@@ -118,13 +118,35 @@ impl FromRequest for Index {
                 .await
                 .map_err(|_| Error::WrongIndexPublicId)?;
 
-            Ok(sqlx::query_as!(
+            let index = sqlx::query_as!(
                 Index,
                 r#"SELECT *, null as "size: _" FROM indexes WHERE public_id = $1 AND deleted_at IS NULL"#,
                 *public_id
             )
-            .fetch_one(&mut db)
-            .await?)
+            .fetch_optional(&mut db)
+            .await?;
+
+            if let Some(index) = index {
+                Ok(index)
+            } else {
+                // Retry a second time because sometimes SQLite doesn't return the index even if it exists inside the DB.
+                // Don't know why…
+                let index = sqlx::query_as!(
+                    Index,
+                    r#"SELECT *, null as "size: _" FROM indexes WHERE public_id = $1 AND deleted_at IS NULL"#,
+                    *public_id
+                )
+                .fetch_optional(&mut db)
+                .await?;
+
+                if let Some(index) = index {
+                    Ok(index)
+                } else {
+                    Err(Error::BadRequest(format!(
+                        "Unknown index for ID {public_id}"
+                    )))
+                }
+            }
         })
     }
 }

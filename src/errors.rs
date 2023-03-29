@@ -58,6 +58,7 @@ pub enum Error {
     UnknownProject(String),
 
     Reqwest(reqwest::Error),
+    Rocksdb(rocksdb::Error),
 
     BadRequest(String),
 }
@@ -113,6 +114,7 @@ impl ResponseError for Error {
             #[cfg(feature = "multitenant")]
             Self::UnknownProject(_) => StatusCode::NOT_FOUND,
             Self::Reqwest(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Rocksdb(_) => StatusCode::INTERNAL_SERVER_ERROR,
 
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
         }
@@ -122,6 +124,12 @@ impl ResponseError for Error {
 impl From<sqlx::Error> for Error {
     fn from(err: sqlx::Error) -> Self {
         Error::Sqlx(err)
+    }
+}
+
+impl From<rocksdb::Error> for Error {
+    fn from(err: rocksdb::Error) -> Self {
+        Error::Rocksdb(err)
     }
 }
 
