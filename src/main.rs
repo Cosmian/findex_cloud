@@ -5,6 +5,7 @@ use std::time::Duration;
 
 #[cfg(feature = "multitenant")]
 use crate::auth0::{Auth, Auth0};
+use crate::core::{rocksdb_key, Table};
 #[cfg(feature = "multitenant")]
 use crate::core::{Backend, BackendProject};
 use crate::errors::Error;
@@ -264,7 +265,7 @@ async fn fetch_entries(index: Index, bytes: Bytes, indexes: Data<TransactionDB>)
 
     let values = indexes.multi_get(
         body.iter()
-            .map(|uid| [&index.id.to_be_bytes(), uid.as_ref()].concat()),
+            .map(|uid| rocksdb_key(&index, Table::Entries, uid)),
     );
 
     for (uid, value) in zip(body.into_iter(), values.into_iter()) {
@@ -288,7 +289,7 @@ async fn fetch_chains(index: Index, bytes: Bytes, indexes: Data<TransactionDB>) 
 
     let values = indexes.multi_get(
         body.iter()
-            .map(|uid| [&index.id.to_be_bytes(), uid.as_ref()].concat()),
+            .map(|uid| rocksdb_key(&index, Table::Chains, uid)),
     );
 
     for (uid, value) in zip(body.into_iter(), values.into_iter()) {
@@ -310,8 +311,8 @@ async fn upsert_entries(bytes: Bytes, index: Index, indexes: Data<TransactionDB>
 
     let mut rejected = EncryptedTable::<UID_LENGTH>::with_capacity(1);
 
-    for (uid, (old_value, new_value)) in body.iter() {
-        let key = [&index.id.to_be_bytes(), uid.as_ref()].concat();
+    for (uid, (old_value, new_value)) in body.into_iter() {
+        let key = rocksdb_key(&index, Table::Entries, &uid);
 
         let transaction = indexes.transaction();
 
@@ -338,7 +339,7 @@ async fn upsert_entries(bytes: Bytes, index: Index, indexes: Data<TransactionDB>
             err => err?,
         };
 
-        if existing_value == *old_value {
+        if existing_value == old_value {
             transaction.put(&key, new_value).unwrap();
             transaction.commit().unwrap();
         } else {
@@ -357,9 +358,9 @@ async fn insert_chains(index: Index, bytes: Bytes, indexes: Data<TransactionDB>)
     let bytes = check_body_signature(bytes, &index.public_id, &index.insert_chains_key)?;
     let body = EncryptedTable::<UID_LENGTH>::try_from_bytes(&bytes)?;
 
-    for (uid, value) in body.iter() {
+    for (uid, value) in body.into_iter() {
         indexes
-            .put([&index.id.to_be_bytes(), uid.as_ref()].concat(), value)
+            .put(rocksdb_key(&index, Table::Chains, &uid), value)
             .unwrap();
     }
 

@@ -11,7 +11,11 @@ use actix_web::{
 use cloudproof_findex::cloud::{CALLBACK_SIGNATURE_LENGTH, SIGNATURE_SEED_LENGTH};
 
 use cosmian_crypto_core::bytes_ser_de::Serializable;
-use cosmian_findex::{kmac, parameters::KmacKey, KeyingMaterial};
+use cosmian_findex::{
+    kmac,
+    parameters::{KmacKey, UID_LENGTH},
+    KeyingMaterial, Uid,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::{types::chrono::NaiveDateTime, SqlitePool};
 
@@ -101,6 +105,17 @@ pub(crate) fn check_body_signature(
     }
 
     Ok(data)
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(u8)]
+pub(crate) enum Table {
+    Entries,
+    Chains,
+}
+
+pub(crate) fn rocksdb_key(index: &Index, table: Table, uid: &Uid<UID_LENGTH>) -> Vec<u8> {
+    [&index.id.to_be_bytes(), &[table as u8][..], uid.as_ref()].concat()
 }
 
 impl FromRequest for Index {
