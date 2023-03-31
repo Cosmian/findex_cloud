@@ -16,6 +16,7 @@ use cosmian_findex::{
     parameters::{KmacKey, UID_LENGTH},
     KeyingMaterial, Uid,
 };
+use rocksdb::MergeOperands;
 use serde::{Deserialize, Serialize};
 use sqlx::{types::chrono::NaiveDateTime, SqlitePool};
 
@@ -112,10 +113,39 @@ pub(crate) fn check_body_signature(
 pub(crate) enum Table {
     Entries,
     Chains,
+    Size,
 }
 
 pub(crate) fn rocksdb_key(index: &Index, table: Table, uid: &Uid<UID_LENGTH>) -> Vec<u8> {
     [&index.id.to_be_bytes(), &[table as u8][..], uid.as_ref()].concat()
+}
+
+pub(crate) fn rocksdb_size_key(index: &Index) -> Vec<u8> {
+    [&index.id.to_be_bytes(), &[Table::Size as u8][..]].concat()
+}
+
+pub(crate) fn rocksdb_merge_add(
+    _key: &[u8],
+    existing_value: Option<&[u8]>,
+    operands: &MergeOperands,
+) -> Option<Vec<u8>> {
+    let mut result = 0;
+
+    if let Some(existing_value) = existing_value {
+        result += match existing_value.try_into().map(usize::from_be_bytes) {
+            Ok(value) => value,
+            Err(_) => return None,
+        };
+    }
+
+    for operand in operands {
+        result += match operand.try_into().map(usize::from_be_bytes) {
+            Ok(value) => value,
+            Err(_) => return None,
+        };
+    }
+
+    Some(result.to_be_bytes().to_vec())
 }
 
 impl FromRequest for Index {

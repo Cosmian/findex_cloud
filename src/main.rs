@@ -1,11 +1,10 @@
 #![feature(iter_next_chunk)]
 
 use std::iter::zip;
-use std::time::Duration;
 
 #[cfg(feature = "multitenant")]
 use crate::auth0::{Auth, Auth0};
-use crate::core::{rocksdb_key, Table};
+use crate::core::{rocksdb_key, rocksdb_size_key, Table};
 #[cfg(feature = "multitenant")]
 use crate::core::{Backend, BackendProject};
 use crate::errors::Error;
@@ -17,7 +16,7 @@ use sqlx::migrate::MigrateDatabase;
 use sqlx::Sqlite;
 
 use crate::{
-    core::{check_body_signature, Id, Index},
+    core::{check_body_signature, rocksdb_merge_add, Id, Index},
     errors::{Response, ResponseBytes},
 };
 use actix_cors::Cors;
@@ -38,7 +37,6 @@ use rand::{distributions::Alphanumeric, Rng, RngCore, SeedableRng};
 use serde::Deserialize;
 use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
 use std::path::Path as FsPath;
-use tokio::{task, time};
 
 #[cfg(feature = "multitenant")]
 mod auth0;
@@ -63,6 +61,7 @@ async fn get_indexes(
     #[cfg(feature = "multitenant")] backend: Data<Backend>,
     #[cfg(feature = "multitenant")] auth: Auth,
     #[cfg(feature = "multitenant")] params: Query<GetIndexQuery>,
+    indexes_db: Data<TransactionDB>,
 ) -> Response<Vec<Index>> {
     #[cfg(feature = "multitenant")]
     {
@@ -82,12 +81,12 @@ async fn get_indexes(
     #[cfg(feature = "multitenant")]
     let project_uuid = &params.project_uuid;
 
-    let indexes = sqlx::query_as!(
+    let mut indexes = sqlx::query_as!(
         Index,
         r#"
             SELECT
                 *,
-                COALESCE((SELECT chains_size + entries_size FROM stats WHERE id = (SELECT MAX(id) FROM stats WHERE index_id = indexes.id)), 0) as "size: _"
+                null as "size: _"
             FROM indexes
             WHERE project_uuid = $1 AND deleted_at IS NULL
             ORDER BY created_at DESC"#,
@@ -95,6 +94,15 @@ async fn get_indexes(
     )
     .fetch_all(&mut db)
     .await?;
+
+    for mut index in &mut indexes {
+        index.size = Some(
+            indexes_db
+                .get(rocksdb_size_key(&index))?
+                .map(|bytes| usize::from_be_bytes(bytes.try_into().unwrap()) as i64)
+                .unwrap_or(0),
+        );
+    }
 
     Ok(Json(indexes))
 }
@@ -195,6 +203,7 @@ async fn get_index(
     pool: Data<SqlitePool>,
     #[cfg(feature = "multitenant")] auth: Auth,
     public_id: Path<String>,
+    indexes_db: Data<TransactionDB>,
 ) -> Response<Index> {
     let mut db = pool.acquire().await?;
 
@@ -208,7 +217,7 @@ async fn get_index(
         r#"
             SELECT
                 *,
-                COALESCE((SELECT chains_size + entries_size FROM stats WHERE id = (SELECT MAX(id) FROM stats WHERE index_id = indexes.id)), 0) as "size: _"
+                null as "size: _"
             FROM indexes
             WHERE public_id = $1 AND authz_id = $2 AND deleted_at IS NULL
         "#,
@@ -218,7 +227,13 @@ async fn get_index(
     .fetch_optional(&mut db)
     .await?;
 
-    if let Some(index) = index {
+    if let Some(mut index) = index {
+        index.size = Some(
+            indexes_db
+                .get(rocksdb_size_key(&index))?
+                .map(|bytes| usize::from_be_bytes(bytes.try_into().unwrap()) as i64)
+                .unwrap_or(0),
+        );
         Ok(Json(index))
     } else {
         Err(Error::BadRequest(format!(
@@ -340,10 +355,14 @@ async fn upsert_entries(bytes: Bytes, index: Index, indexes: Data<TransactionDB>
         };
 
         if existing_value == old_value {
-            transaction.put(&key, new_value).unwrap();
-            transaction.commit().unwrap();
+            if existing_value.is_none() {
+                transaction.merge(rocksdb_size_key(&index), new_value.len().to_be_bytes())?;
+            }
+
+            transaction.put(&key, new_value)?;
+            transaction.commit()?;
         } else {
-            transaction.rollback().unwrap();
+            transaction.rollback()?;
             rejected.insert(uid.clone(), existing_value.unwrap());
         }
     }
@@ -358,11 +377,13 @@ async fn insert_chains(index: Index, bytes: Bytes, indexes: Data<TransactionDB>)
     let bytes = check_body_signature(bytes, &index.public_id, &index.insert_chains_key)?;
     let body = EncryptedTable::<UID_LENGTH>::try_from_bytes(&bytes)?;
 
+    let mut size = 0;
     for (uid, value) in body.into_iter() {
-        indexes
-            .put(rocksdb_key(&index, Table::Chains, &uid), value)
-            .unwrap();
+        size += value.len();
+        indexes.put(rocksdb_key(&index, Table::Chains, &uid), value)?;
     }
+
+    indexes.merge(rocksdb_size_key(&index), size.to_be_bytes())?;
 
     Ok(Json(()))
 }
@@ -398,24 +419,6 @@ async fn main() -> std::io::Result<()> {
     // Save a cloned pool before async move `pool` inside the task::spawn.
     let pool_cloned = pool.clone();
 
-    task::spawn(async move {
-        let mut interval = time::interval(Duration::from_secs(60 * 60));
-
-        loop {
-            interval.tick().await;
-            let mut db = pool.acquire().await.unwrap();
-            sqlx::query!(
-                "INSERT INTO stats (index_id, chains_size, entries_size)
-                    SELECT index_id, SUM(chain_size) as chains_size, SUM(entry_size) as entries_size
-                        FROM (
-                                       SELECT index_id, LENGTH(value) as chain_size, 0 as entry_size FROM chains
-                            UNION ALL  SELECT index_id, LENGTH(value) as entry_size, 0 as chain_size FROM entries
-                        ) as lengths
-                    GROUP BY index_id",
-            ).execute(&mut db).await.unwrap();
-        }
-    });
-
     match start_server(pool_cloned.clone(), true).await {
         Ok(_) => Ok(()),
         Err(_) => start_server(pool_cloned, false).await,
@@ -435,6 +438,7 @@ async fn start_server(pool: SqlitePool, ipv6: bool) -> std::io::Result<()> {
 
     let mut opts = Options::default();
     opts.create_if_missing(true);
+    opts.set_merge_operator_associative("add", rocksdb_merge_add);
     let mut txn_db_opts = TransactionDBOptions::default();
     txn_db_opts.set_txn_lock_timeout(10);
 
