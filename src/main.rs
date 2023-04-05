@@ -1,5 +1,8 @@
 #![feature(iter_next_chunk)]
 
+#[cfg(feature = "log_requests")]
+use crate::debug_logs::DataTimeDiffInMillisecondsMutex;
+
 use std::iter::zip;
 
 #[cfg(feature = "multitenant")]
@@ -41,6 +44,8 @@ use std::path::Path as FsPath;
 #[cfg(feature = "multitenant")]
 mod auth0;
 mod core;
+#[cfg(feature = "log_requests")]
+mod debug_logs;
 mod errors;
 
 #[cfg(not(feature = "multitenant"))]
@@ -98,7 +103,7 @@ async fn get_indexes(
     for mut index in &mut indexes {
         index.size = Some(
             indexes_db
-                .get(rocksdb_size_key(&index))?
+                .get(rocksdb_size_key(index))?
                 .map(|bytes| usize::from_be_bytes(bytes.try_into().unwrap()) as i64)
                 .unwrap_or(0),
         );
@@ -272,9 +277,17 @@ async fn delete_index(
 }
 
 #[post("/indexes/{public_id}/fetch_entries")]
-async fn fetch_entries(index: Index, bytes: Bytes, indexes: Data<TransactionDB>) -> ResponseBytes {
+async fn fetch_entries(
+    index: Index,
+    bytes: Bytes,
+    indexes: Data<TransactionDB>,
+    #[cfg(feature = "log_requests")] time_diff_mutex: DataTimeDiffInMillisecondsMutex,
+) -> ResponseBytes {
     let bytes = check_body_signature(bytes, &index.public_id, &index.fetch_entries_key)?;
     let body = deserialize_set::<CoreError, Uid<UID_LENGTH>>(&bytes)?;
+
+    #[cfg(feature = "log_requests")]
+    let uids = body.clone();
 
     let mut uids_and_values = EncryptedTable::<UID_LENGTH>::with_capacity(body.len());
 
@@ -290,15 +303,26 @@ async fn fetch_entries(index: Index, bytes: Bytes, indexes: Data<TransactionDB>)
         }
     }
 
+    #[cfg(feature = "log_requests")]
+    crate::debug_logs::save_log("fetch_entries", time_diff_mutex, uids, &uids_and_values);
+
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
         .body(uids_and_values.try_to_bytes()?))
 }
 
 #[post("/indexes/{public_id}/fetch_chains")]
-async fn fetch_chains(index: Index, bytes: Bytes, indexes: Data<TransactionDB>) -> ResponseBytes {
+async fn fetch_chains(
+    index: Index,
+    bytes: Bytes,
+    indexes: Data<TransactionDB>,
+    #[cfg(feature = "log_requests")] time_diff_mutex: DataTimeDiffInMillisecondsMutex,
+) -> ResponseBytes {
     let bytes = check_body_signature(bytes, &index.public_id, &index.fetch_chains_key)?;
     let body = deserialize_set::<CoreError, Uid<UID_LENGTH>>(&bytes)?;
+
+    #[cfg(feature = "log_requests")]
+    let uids = body.clone();
 
     let mut uids_and_values = EncryptedTable::<UID_LENGTH>::with_capacity(body.len());
 
@@ -313,6 +337,9 @@ async fn fetch_chains(index: Index, bytes: Bytes, indexes: Data<TransactionDB>) 
             uids_and_values.insert(uid, value);
         }
     }
+
+    #[cfg(feature = "log_requests")]
+    crate::debug_logs::save_log("fetch_chains", time_diff_mutex, uids, &uids_and_values);
 
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
@@ -447,6 +474,9 @@ async fn start_server(pool: SqlitePool, ipv6: bool) -> std::io::Result<()> {
 
     let db = Data::new(transaction_db);
 
+    #[cfg(feature = "log_requests")]
+    let time_mock: DataTimeDiffInMillisecondsMutex = Data::new(Default::default());
+
     let mut server = HttpServer::new(move || {
         #[allow(unused_mut)]
         let mut app = App::new()
@@ -462,8 +492,7 @@ async fn start_server(pool: SqlitePool, ipv6: bool) -> std::io::Result<()> {
             .service(fetch_entries)
             .service(fetch_chains)
             .service(upsert_entries)
-            .service(insert_chains)
-            .service(fs::Files::new("/", "./static").index_file("index.html"));
+            .service(insert_chains);
 
         #[cfg(feature = "multitenant")]
         {
@@ -471,7 +500,18 @@ async fn start_server(pool: SqlitePool, ipv6: bool) -> std::io::Result<()> {
             app = app.app_data(backend.clone());
         }
 
-        app
+        #[cfg(feature = "log_requests")]
+        {
+            app = app
+                .app_data(time_mock.clone())
+                .service(crate::debug_logs::set_time_diff)
+                .service(crate::debug_logs::post_reset_requests_log)
+                .service(crate::debug_logs::get_requests_log)
+                .service(crate::debug_logs::export_entries_for_index)
+                .service(crate::debug_logs::export_chains_for_index);
+        }
+
+        app.service(fs::Files::new("/", "./static").index_file("index.html"))
     })
     .bind(("0.0.0.0", 8080))?;
 

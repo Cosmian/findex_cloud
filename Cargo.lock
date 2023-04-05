@@ -869,6 +869,7 @@ dependencies = [
  "actix-web",
  "actix-web-httpauth",
  "alcoholic_jwt",
+ "base64 0.21.0",
  "chrono",
  "cloudproof_findex",
  "cosmian_crypto_core",
