@@ -17,6 +17,7 @@ impl Database {
         let mut opts = Options::default();
         opts.create_if_missing(true);
         opts.set_merge_operator_associative("add", merge_add);
+        opts.set_max_open_files(10);
         let mut txn_db_opts = TransactionDBOptions::default();
         txn_db_opts.set_txn_lock_timeout(10);
 

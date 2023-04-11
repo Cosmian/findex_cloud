@@ -3,6 +3,7 @@
 #[cfg(feature = "log_requests")]
 use crate::debug_logs::DataTimeDiffInMillisecondsMutex;
 
+use std::env;
 use std::sync::Arc;
 
 #[cfg(feature = "multitenant")]
@@ -47,6 +48,10 @@ mod core;
 mod debug_logs;
 mod errors;
 
+#[cfg(feature = "heed")]
+mod heed;
+
+#[cfg(feature = "rocksdb")]
 mod rocksdb;
 
 #[cfg(not(feature = "multitenant"))]
@@ -397,8 +402,19 @@ async fn start_server(pool: SqlitePool, ipv6: bool) -> std::io::Result<()> {
 
     let database_pool = Data::new(pool);
 
-    let indexes_database: Data<dyn IndexesDatabase> =
-        Data::from(Arc::new(crate::rocksdb::Database::create()) as Arc<dyn IndexesDatabase>);
+    let indexes_database: Data<dyn IndexesDatabase> = match env::var("INDEXES_DATABASE_TYPE").as_deref().unwrap_or("rocksdb") {
+            #[cfg(feature = "heed")]
+            "heed" => Data::from(Arc::new(crate::heed::Database::create()) as Arc<dyn IndexesDatabase>),
+            #[cfg(not(feature = "heed"))]
+            "heed" => panic!("Cannot load `INDEXES_DATABASE_TYPE=heed` because `findex_cloud` wasn't compiled with \"heed\" feature."),
+            
+            #[cfg(feature = "rocksdb")]
+            "rocksdb" => Data::from(Arc::new(crate::rocksdb::Database::create()) as Arc<dyn IndexesDatabase>),
+            #[cfg(not(feature = "rocksdb"))]
+            "rocksdb" => panic!("Cannot load `INDEXES_DATABASE_TYPE=rocksdb` because `findex_cloud` wasn't compiled with \"rocksdb\" feature."),
+
+            indexes_database_type => panic!("Unknown `INDEXES_DATABASE_TYPE` env variable `{indexes_database_type}` (please use `rocksdb` or `heed`)"),
+        };
 
     #[cfg(feature = "log_requests")]
     let time_mock: DataTimeDiffInMillisecondsMutex = Data::new(Default::default());

@@ -4,8 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+default = ["rocksdb"]
 multitenant = ["alcoholic_jwt"]
 log_requests = ["base64"]
+heed = ["dep:heed"]
+rocksdb = ["dep:rocksdb"]
 
 [dependencies]
 actix-cors = "0.6.4"
@@ -27,5 +30,6 @@ serde = { version = "1.0.152", features = ["serde_derive"] }
 serde_json = "1.0.91"
 sqlx = { version = "0.6.2", features = ["runtime-tokio-native-tls", "sqlite", "chrono"] }
 tokio = "1.25.0"
-rocksdb = { version = "0.20.1", features = ["multi-threaded-cf"] }
+rocksdb = { version = "0.20.1", features = ["multi-threaded-cf"], optional = true }
 base64 = { version = "0.21.0", optional = true }
+heed = { version = "0.11.0", optional = true }
