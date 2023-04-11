@@ -1,7 +1,7 @@
 #[cfg(feature = "multitenant")]
 use std::env;
 
-use std::{future::Future, pin::Pin, time::SystemTime};
+use std::{collections::HashSet, future::Future, pin::Pin, time::SystemTime};
 
 use actix_web::{
     dev::Payload,
@@ -14,9 +14,8 @@ use cosmian_crypto_core::bytes_ser_de::Serializable;
 use cosmian_findex::{
     kmac,
     parameters::{KmacKey, UID_LENGTH},
-    KeyingMaterial, Uid,
+    EncryptedTable, KeyingMaterial, Uid, UpsertData,
 };
-use rocksdb::MergeOperands;
 use serde::{Deserialize, Serialize};
 use sqlx::{types::chrono::NaiveDateTime, SqlitePool};
 
@@ -109,43 +108,36 @@ pub(crate) fn check_body_signature(
 }
 
 #[derive(Copy, Clone, Debug)]
-#[repr(u8)]
 pub(crate) enum Table {
     Entries,
     Chains,
-    Size,
 }
 
-pub(crate) fn rocksdb_key(index: &Index, table: Table, uid: &Uid<UID_LENGTH>) -> Vec<u8> {
-    [&index.id.to_be_bytes(), &[table as u8][..], uid.as_ref()].concat()
-}
+pub(crate) trait IndexesDatabase: Sync + Send {
+    fn set_sizes(&self, indexes: &mut Vec<Index>) -> Result<(), Error> {
+        for index in indexes {
+            self.set_size(index)?;
+        }
 
-pub(crate) fn rocksdb_size_key(index: &Index) -> Vec<u8> {
-    [&index.id.to_be_bytes(), &[Table::Size as u8][..]].concat()
-}
-
-pub(crate) fn rocksdb_merge_add(
-    _key: &[u8],
-    existing_value: Option<&[u8]>,
-    operands: &MergeOperands,
-) -> Option<Vec<u8>> {
-    let mut result = 0;
-
-    if let Some(existing_value) = existing_value {
-        result += match existing_value.try_into().map(usize::from_be_bytes) {
-            Ok(value) => value,
-            Err(_) => return None,
-        };
+        Ok(())
     }
 
-    for operand in operands {
-        result += match operand.try_into().map(usize::from_be_bytes) {
-            Ok(value) => value,
-            Err(_) => return None,
-        };
-    }
+    fn set_size(&self, indexes: &mut Index) -> Result<(), Error>;
 
-    Some(result.to_be_bytes().to_vec())
+    fn fetch(
+        &self,
+        index: &Index,
+        table: Table,
+        uids: HashSet<Uid<UID_LENGTH>>,
+    ) -> Result<EncryptedTable<UID_LENGTH>, Error>;
+
+    fn upsert_entries(
+        &self,
+        index: &Index,
+        data: UpsertData<UID_LENGTH>,
+    ) -> Result<EncryptedTable<UID_LENGTH>, Error>;
+
+    fn insert_chains(&self, index: &Index, data: EncryptedTable<UID_LENGTH>) -> Result<(), Error>;
 }
 
 impl FromRequest for Index {

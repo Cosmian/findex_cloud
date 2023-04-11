@@ -52,7 +52,7 @@ pub enum Error {
     TokenExpired,
 
     FailToBuildBearerHeader(InvalidHeaderValue),
-    BearerError(AuthenticationError<Bearer>),
+    BearerError(Box<AuthenticationError<Bearer>>),
 
     #[cfg(feature = "multitenant")]
     UnknownProject(String),
@@ -171,6 +171,6 @@ impl From<InvalidHeaderValue> for Error {
 
 impl From<AuthenticationError<Bearer>> for Error {
     fn from(err: AuthenticationError<Bearer>) -> Self {
-        Error::BearerError(err)
+        Error::BearerError(Box::new(err))
     }
 }

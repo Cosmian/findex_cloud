@@ -3,23 +3,22 @@
 #[cfg(feature = "log_requests")]
 use crate::debug_logs::DataTimeDiffInMillisecondsMutex;
 
-use std::iter::zip;
+use std::sync::Arc;
 
 #[cfg(feature = "multitenant")]
 use crate::auth0::{Auth, Auth0};
-use crate::core::{rocksdb_key, rocksdb_size_key, Table};
 #[cfg(feature = "multitenant")]
 use crate::core::{Backend, BackendProject};
+use crate::core::{IndexesDatabase, Table};
 use crate::errors::Error;
 use actix_web::web::PayloadConfig;
 #[cfg(feature = "multitenant")]
 use actix_web::web::Query;
-use rocksdb::{Options, TransactionDB, TransactionDBOptions};
 use sqlx::migrate::MigrateDatabase;
 use sqlx::Sqlite;
 
 use crate::{
-    core::{check_body_signature, rocksdb_merge_add, Id, Index},
+    core::{check_body_signature, Id, Index},
     errors::{Response, ResponseBytes},
 };
 use actix_cors::Cors;
@@ -48,6 +47,8 @@ mod core;
 mod debug_logs;
 mod errors;
 
+mod rocksdb;
+
 #[cfg(not(feature = "multitenant"))]
 const SINGLE_TENANT_PROJECT_UUID: &str = "SINGLE_TENANT_PROJECT_UUID";
 
@@ -66,7 +67,7 @@ async fn get_indexes(
     #[cfg(feature = "multitenant")] backend: Data<Backend>,
     #[cfg(feature = "multitenant")] auth: Auth,
     #[cfg(feature = "multitenant")] params: Query<GetIndexQuery>,
-    indexes_db: Data<TransactionDB>,
+    indexes_db: Data<dyn IndexesDatabase>,
 ) -> Response<Vec<Index>> {
     #[cfg(feature = "multitenant")]
     {
@@ -100,14 +101,7 @@ async fn get_indexes(
     .fetch_all(&mut db)
     .await?;
 
-    for mut index in &mut indexes {
-        index.size = Some(
-            indexes_db
-                .get(rocksdb_size_key(index))?
-                .map(|bytes| usize::from_be_bytes(bytes.try_into().unwrap()) as i64)
-                .unwrap_or(0),
-        );
-    }
+    indexes_db.set_sizes(&mut indexes)?;
 
     Ok(Json(indexes))
 }
@@ -208,7 +202,7 @@ async fn get_index(
     pool: Data<SqlitePool>,
     #[cfg(feature = "multitenant")] auth: Auth,
     public_id: Path<String>,
-    indexes_db: Data<TransactionDB>,
+    indexes_db: Data<dyn IndexesDatabase>,
 ) -> Response<Index> {
     let mut db = pool.acquire().await?;
 
@@ -233,12 +227,7 @@ async fn get_index(
     .await?;
 
     if let Some(mut index) = index {
-        index.size = Some(
-            indexes_db
-                .get(rocksdb_size_key(&index))?
-                .map(|bytes| usize::from_be_bytes(bytes.try_into().unwrap()) as i64)
-                .unwrap_or(0),
-        );
+        indexes_db.set_size(&mut index)?;
         Ok(Json(index))
     } else {
         Err(Error::BadRequest(format!(
@@ -280,31 +269,24 @@ async fn delete_index(
 async fn fetch_entries(
     index: Index,
     bytes: Bytes,
-    indexes: Data<TransactionDB>,
+    indexes: Data<dyn IndexesDatabase>,
     #[cfg(feature = "log_requests")] time_diff_mutex: DataTimeDiffInMillisecondsMutex,
 ) -> ResponseBytes {
     let bytes = check_body_signature(bytes, &index.public_id, &index.fetch_entries_key)?;
-    let body = deserialize_set::<CoreError, Uid<UID_LENGTH>>(&bytes)?;
+    let uids = deserialize_set::<CoreError, Uid<UID_LENGTH>>(&bytes)?;
 
     #[cfg(feature = "log_requests")]
-    let uids = body.clone();
+    let cloned_uids = uids.clone();
 
-    let mut uids_and_values = EncryptedTable::<UID_LENGTH>::with_capacity(body.len());
+    let uids_and_values = indexes.fetch(&index, Table::Entries, uids)?;
 
-    let values = indexes.multi_get(
-        body.iter()
-            .map(|uid| rocksdb_key(&index, Table::Entries, uid)),
+    #[cfg(feature = "log_requests")]
+    crate::debug_logs::save_log(
+        "fetch_entries",
+        time_diff_mutex,
+        cloned_uids,
+        &uids_and_values,
     );
-
-    for (uid, value) in zip(body.into_iter(), values.into_iter()) {
-        let value = value.unwrap();
-        if let Some(value) = value {
-            uids_and_values.insert(uid, value);
-        }
-    }
-
-    #[cfg(feature = "log_requests")]
-    crate::debug_logs::save_log("fetch_entries", time_diff_mutex, uids, &uids_and_values);
 
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
@@ -315,31 +297,24 @@ async fn fetch_entries(
 async fn fetch_chains(
     index: Index,
     bytes: Bytes,
-    indexes: Data<TransactionDB>,
+    indexes: Data<dyn IndexesDatabase>,
     #[cfg(feature = "log_requests")] time_diff_mutex: DataTimeDiffInMillisecondsMutex,
 ) -> ResponseBytes {
     let bytes = check_body_signature(bytes, &index.public_id, &index.fetch_chains_key)?;
-    let body = deserialize_set::<CoreError, Uid<UID_LENGTH>>(&bytes)?;
+    let uids = deserialize_set::<CoreError, Uid<UID_LENGTH>>(&bytes)?;
 
     #[cfg(feature = "log_requests")]
-    let uids = body.clone();
+    let cloned_uids = uids.clone();
 
-    let mut uids_and_values = EncryptedTable::<UID_LENGTH>::with_capacity(body.len());
+    let uids_and_values = indexes.fetch(&index, Table::Chains, uids)?;
 
-    let values = indexes.multi_get(
-        body.iter()
-            .map(|uid| rocksdb_key(&index, Table::Chains, uid)),
+    #[cfg(feature = "log_requests")]
+    crate::debug_logs::save_log(
+        "fetch_chains",
+        time_diff_mutex,
+        cloned_uids,
+        &uids_and_values,
     );
-
-    for (uid, value) in zip(body.into_iter(), values.into_iter()) {
-        let value = value.unwrap();
-        if let Some(value) = value {
-            uids_and_values.insert(uid, value);
-        }
-    }
-
-    #[cfg(feature = "log_requests")]
-    crate::debug_logs::save_log("fetch_chains", time_diff_mutex, uids, &uids_and_values);
 
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
@@ -347,52 +322,15 @@ async fn fetch_chains(
 }
 
 #[post("/indexes/{public_id}/upsert_entries")]
-async fn upsert_entries(bytes: Bytes, index: Index, indexes: Data<TransactionDB>) -> ResponseBytes {
+async fn upsert_entries(
+    bytes: Bytes,
+    index: Index,
+    indexes: Data<dyn IndexesDatabase>,
+) -> ResponseBytes {
     let bytes = check_body_signature(bytes, &index.public_id, &index.upsert_entries_key)?;
-    let body = UpsertData::<UID_LENGTH>::try_from_bytes(&bytes)?;
+    let data = UpsertData::<UID_LENGTH>::try_from_bytes(&bytes)?;
 
-    let mut rejected = EncryptedTable::<UID_LENGTH>::with_capacity(1);
-
-    for (uid, (old_value, new_value)) in body.into_iter() {
-        let key = rocksdb_key(&index, Table::Entries, &uid);
-
-        let transaction = indexes.transaction();
-
-        let existing_value = match transaction.get_for_update(&key, true) {
-            Ok(existing_value) => existing_value,
-            Err(err) if err.as_ref() == "Operation timed out: Timeout waiting to lock key" => {
-                transaction.rollback()?;
-
-                let mut retry = 3;
-                let value = loop {
-                    if let Some(value) = indexes.get(&key)? {
-                        break value;
-                    }
-
-                    retry -= 1;
-                    if retry <= 0 {
-                        return Err(Error::Rocksdb(err));
-                    }
-                };
-
-                rejected.insert(uid.clone(), value);
-                continue;
-            }
-            err => err?,
-        };
-
-        if existing_value == old_value {
-            if existing_value.is_none() {
-                transaction.merge(rocksdb_size_key(&index), new_value.len().to_be_bytes())?;
-            }
-
-            transaction.put(&key, new_value)?;
-            transaction.commit()?;
-        } else {
-            transaction.rollback()?;
-            rejected.insert(uid.clone(), existing_value.unwrap());
-        }
-    }
+    let rejected = indexes.upsert_entries(&index, data)?;
 
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
@@ -400,17 +338,15 @@ async fn upsert_entries(bytes: Bytes, index: Index, indexes: Data<TransactionDB>
 }
 
 #[post("/indexes/{public_id}/insert_chains")]
-async fn insert_chains(index: Index, bytes: Bytes, indexes: Data<TransactionDB>) -> Response<()> {
+async fn insert_chains(
+    index: Index,
+    bytes: Bytes,
+    indexes: Data<dyn IndexesDatabase>,
+) -> Response<()> {
     let bytes = check_body_signature(bytes, &index.public_id, &index.insert_chains_key)?;
-    let body = EncryptedTable::<UID_LENGTH>::try_from_bytes(&bytes)?;
+    let data = EncryptedTable::<UID_LENGTH>::try_from_bytes(&bytes)?;
 
-    let mut size = 0;
-    for (uid, value) in body.into_iter() {
-        size += value.len();
-        indexes.put(rocksdb_key(&index, Table::Chains, &uid), value)?;
-    }
-
-    indexes.merge(rocksdb_size_key(&index), size.to_be_bytes())?;
+    indexes.insert_chains(&index, data)?;
 
     Ok(Json(()))
 }
@@ -461,18 +397,8 @@ async fn start_server(pool: SqlitePool, ipv6: bool) -> std::io::Result<()> {
 
     let database_pool = Data::new(pool);
 
-    let indexes_url = "data/indexes_rocksdb";
-
-    let mut opts = Options::default();
-    opts.create_if_missing(true);
-    opts.set_merge_operator_associative("add", rocksdb_merge_add);
-    let mut txn_db_opts = TransactionDBOptions::default();
-    txn_db_opts.set_txn_lock_timeout(10);
-
-    let transaction_db: TransactionDB =
-        TransactionDB::open(&opts, &txn_db_opts, indexes_url).unwrap();
-
-    let db = Data::new(transaction_db);
+    let indexes_database: Data<dyn IndexesDatabase> =
+        Data::from(Arc::new(crate::rocksdb::Database::create()) as Arc<dyn IndexesDatabase>);
 
     #[cfg(feature = "log_requests")]
     let time_mock: DataTimeDiffInMillisecondsMutex = Data::new(Default::default());
@@ -483,7 +409,7 @@ async fn start_server(pool: SqlitePool, ipv6: bool) -> std::io::Result<()> {
             .wrap(Cors::permissive())
             .wrap(Logger::default())
             .app_data(database_pool.clone())
-            .app_data(db.clone())
+            .app_data(indexes_database.clone())
             .app_data(PayloadConfig::new(50_000_000))
             .service(get_index)
             .service(get_indexes)
