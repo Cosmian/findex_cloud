@@ -16,6 +16,7 @@ use actix_web_httpauth::{
 use alcoholic_jwt::ValidationError;
 use cloudproof_findex::ser_de::SerializableSetError;
 use cosmian_findex::CoreError;
+#[cfg(feature = "multitenant")]
 use reqwest::header::InvalidHeaderValue;
 
 pub type Response<T> = Result<Json<T>, Error>;
@@ -51,12 +52,14 @@ pub enum Error {
     #[cfg(feature = "multitenant")]
     TokenExpired,
 
+    #[cfg(feature = "multitenant")]
     FailToBuildBearerHeader(InvalidHeaderValue),
     BearerError(Box<AuthenticationError<Bearer>>),
 
     #[cfg(feature = "multitenant")]
     UnknownProject(String),
 
+    #[cfg(feature = "multitenant")]
     Reqwest(reqwest::Error),
     #[cfg(feature = "rocksdb")]
     Rocksdb(rocksdb::Error),
@@ -111,11 +114,13 @@ impl ResponseError for Error {
             #[cfg(feature = "multitenant")]
             Self::TokenExpired => StatusCode::FORBIDDEN,
 
+            #[cfg(feature = "multitenant")]
             Self::FailToBuildBearerHeader(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::BearerError(_) => StatusCode::FORBIDDEN,
 
             #[cfg(feature = "multitenant")]
             Self::UnknownProject(_) => StatusCode::NOT_FOUND,
+            #[cfg(feature = "multitenant")]
             Self::Reqwest(_) => StatusCode::INTERNAL_SERVER_ERROR,
             #[cfg(feature = "rocksdb")]
             Self::Rocksdb(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -171,12 +176,14 @@ impl From<SerializableSetError> for Error {
     }
 }
 
+#[cfg(feature = "multitenant")]
 impl From<reqwest::Error> for Error {
     fn from(err: reqwest::Error) -> Self {
         Error::Reqwest(err)
     }
 }
 
+#[cfg(feature = "multitenant")]
 impl From<InvalidHeaderValue> for Error {
     fn from(err: InvalidHeaderValue) -> Self {
         Error::FailToBuildBearerHeader(err)

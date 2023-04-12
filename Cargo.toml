@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = ["rocksdb"]
-multitenant = ["alcoholic_jwt"]
+multitenant = ["alcoholic_jwt", "reqwest"]
 log_requests = ["base64"]
 heed = ["dep:heed"]
 rocksdb = ["dep:rocksdb"]
@@ -25,7 +25,7 @@ env_logger = "0.10.0"
 futures = "0.3.26"
 log = "0.4.17"
 rand = "0.8.5"
-reqwest = { version = "0.11.14", features = ["json"] }
+reqwest = { version = "0.11.14", features = ["json"], optional = true }
 serde = { version = "1.0.152", features = ["serde_derive"] }
 serde_json = "1.0.91"
 sqlx = { version = "0.6.2", features = ["runtime-tokio-native-tls", "sqlite", "chrono"] }
