@@ -208,7 +208,7 @@ impl Backend {
 #[cfg(feature = "multitenant")]
 #[derive(Debug, Deserialize, PartialEq)]
 pub(crate) struct BackendProject {
-    pub(crate) uuid: String,
+    pub(crate) id: String,
 }
 
 #[cfg(feature = "multitenant")]

@@ -79,7 +79,7 @@ async fn get_indexes(
         let projects = BackendProject::get_projects(&backend, &auth).await?;
 
         if !projects.contains(&BackendProject {
-            uuid: params.project_uuid.clone(),
+            id: params.project_uuid.clone(),
         }) {
             return Err(Error::UnknownProject(params.project_uuid.clone()));
         }
@@ -130,7 +130,7 @@ async fn post_indexes(
         let projects = BackendProject::get_projects(&backend, &auth).await?;
 
         if !projects.contains(&BackendProject {
-            uuid: body.project_uuid.clone(),
+            id: body.project_uuid.clone(),
         }) {
             return Err(Error::UnknownProject(body.project_uuid.clone()));
         }
@@ -407,7 +407,7 @@ async fn start_server(pool: SqlitePool, ipv6: bool) -> std::io::Result<()> {
             "heed" => Data::from(Arc::new(crate::heed::Database::create()) as Arc<dyn IndexesDatabase>),
             #[cfg(not(feature = "heed"))]
             "heed" => panic!("Cannot load `INDEXES_DATABASE_TYPE=heed` because `findex_cloud` wasn't compiled with \"heed\" feature."),
-            
+
             #[cfg(feature = "rocksdb")]
             "rocksdb" => Data::from(Arc::new(crate::rocksdb::Database::create()) as Arc<dyn IndexesDatabase>),
             #[cfg(not(feature = "rocksdb"))]
