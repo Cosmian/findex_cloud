@@ -124,6 +124,33 @@ impl IndexesDatabase for Database {
 
         Ok(())
     }
+
+    #[cfg(feature = "log_requests")]
+    fn fetch_all_as_json(&self, index: &Index, table: Table) -> Result<String, Error> {
+        use base64::{engine::general_purpose, Engine};
+        use rocksdb::{Direction, IteratorMode};
+
+        let prefix = prefix(index, table);
+
+        let iter = self
+            .0
+            .iterator(IteratorMode::From(&prefix, Direction::Forward));
+
+        let contents_with_commas = iter
+            .filter_map(|result| result.ok())
+            .take_while(|(key, _)| key.starts_with(&prefix))
+            .map(|(key, value)| {
+                format!(
+                    "\"{}\":\"{}\"",
+                    general_purpose::STANDARD_NO_PAD.encode(key),
+                    general_purpose::STANDARD_NO_PAD.encode(value)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",\n");
+
+        Ok(format!("[{contents_with_commas}]"))
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -142,12 +169,11 @@ fn table_to_prefix(table: Table) -> Prefix {
 }
 
 fn key(index: &Index, table: Table, uid: &Uid<UID_LENGTH>) -> Vec<u8> {
-    [
-        &index.id.to_be_bytes(),
-        &[table_to_prefix(table) as u8][..],
-        uid.as_ref(),
-    ]
-    .concat()
+    [&prefix(index, table), uid.as_ref()].concat()
+}
+
+fn prefix(index: &Index, table: Table) -> Vec<u8> {
+    [&index.id.to_be_bytes(), &[table_to_prefix(table) as u8][..]].concat()
 }
 
 fn size_key(index: &Index) -> Vec<u8> {

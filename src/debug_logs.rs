@@ -21,8 +21,8 @@ use actix_web::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use cosmian_findex::{parameters::UID_LENGTH, Uid};
-use rocksdb::TransactionDB;
 
+use crate::core::IndexesDatabase;
 use crate::{
     core::{Index, Table},
     errors::{Error, Response},
@@ -38,7 +38,7 @@ pub(crate) struct TimeDiffInMilliseconds(pub(crate) i128);
 #[post("/set_time_diff/{fake_time}")]
 pub(crate) async fn set_time_diff(
     fake_time: Path<String>,
-    time_diff_mutex: Data<RwLock<TimeDiffInMilliseconds>>,
+    time_diff_mutex: DataTimeDiffInMillisecondsMutex,
 ) -> Response<()> {
     let fake_time_in_milliseconds: u128 = fake_time
         .parse()
@@ -66,23 +66,25 @@ pub(crate) async fn get_requests_log() -> String {
 }
 
 #[get("/export_entries_for_index/{public_id}")]
-pub(crate) async fn export_entries_for_index(index: Index, indexes: Data<TransactionDB>) -> String {
-    export_all_indexes_for_prefix(&index, Table::Entries, indexes)
+pub(crate) async fn export_entries_for_index(
+    index: Index,
+    indexes: Data<dyn IndexesDatabase>,
+) -> Result<String, Error> {
+    indexes.fetch_all_as_json(&index, Table::Entries)
 }
 
 #[get("/export_chains_for_index/{public_id}")]
-pub(crate) async fn export_chains_for_index(index: Index, indexes: Data<TransactionDB>) -> String {
-    export_all_indexes_for_prefix(&index, Table::Chains, indexes)
+pub(crate) async fn export_chains_for_index(
+    index: Index,
+    indexes: Data<dyn IndexesDatabase>,
+) -> Result<String, Error> {
+    indexes.fetch_all_as_json(&index, Table::Chains)
 }
 
 #[post("/reset_requests_log")]
 async fn post_reset_requests_log() -> String {
     let _ = std::fs::remove_file(LOGS_PATH); // Don't want to crash if the file doesn't exists
     "OK".to_owned()
-}
-
-fn rocksdb_keys_prefix(index: &Index, table: Table) -> Vec<u8> {
-    [&index.id.to_be_bytes(), &[table as u8][..]].concat()
 }
 
 pub(crate) fn save_log(
@@ -127,32 +129,4 @@ pub(crate) fn save_log(
         "data": data,
     });
     writeln!(file, "{}", serde_json::to_string(&json).unwrap()).unwrap();
-}
-
-fn export_all_indexes_for_prefix(
-    index: &Index,
-    table: Table,
-    indexes: Data<rocksdb::TransactionDB>,
-) -> String {
-    let prefix = rocksdb_keys_prefix(index, table);
-
-    let iter = indexes.iterator(rocksdb::IteratorMode::From(
-        &prefix,
-        rocksdb::Direction::Forward,
-    ));
-
-    let contents_with_commas = iter
-        .filter_map(|result| result.ok())
-        .take_while(|(key, _)| key.starts_with(&prefix))
-        .map(|(key, value)| {
-            format!(
-                "\"{}\":\"{}\"",
-                general_purpose::STANDARD_NO_PAD.encode(key),
-                general_purpose::STANDARD_NO_PAD.encode(value)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(",\n");
-
-    format!("[{contents_with_commas}]")
 }

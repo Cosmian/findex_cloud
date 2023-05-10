@@ -138,6 +138,9 @@ pub(crate) trait IndexesDatabase: Sync + Send {
     ) -> Result<EncryptedTable<UID_LENGTH>, Error>;
 
     fn insert_chains(&self, index: &Index, data: EncryptedTable<UID_LENGTH>) -> Result<(), Error>;
+
+    #[cfg(feature = "log_requests")]
+    fn fetch_all_as_json(&self, index: &Index, table: Table) -> Result<String, Error>;
 }
 
 impl FromRequest for Index {
