@@ -70,7 +70,7 @@
         let indexes = [];
 
         const fetchIndexes = async () => {
-            const response = await fetch("http://0.0.0.0:8080/indexes", {
+            const response = await fetch("/indexes", {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json'
@@ -111,7 +111,7 @@
         document.getElementById('new_index').addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            let response = await fetch("http://0.0.0.0:8080/indexes", {
+            let response = await fetch("/indexes", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -145,7 +145,7 @@
         })
 
         document.getElementById('delete').addEventListener('click', async () => {
-            const response = await fetch(`http://0.0.0.0:8080/indexes/${indexId}`, {
+            const response = await fetch(`/indexes/${indexId}`, {
                 method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json'
