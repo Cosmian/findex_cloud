@@ -14,6 +14,7 @@ RUN mkdir data
 RUN touch data/database.sqlite
 
 RUN cargo install sqlx-cli && \
+    cp .env.example .env && \
     sqlx database reset -y && \
     cargo build --release && \
     cd static/ && npm install && cd .. && \

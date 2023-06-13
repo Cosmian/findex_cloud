@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::fs;
 
+use async_trait::async_trait;
 use heed::types::*;
 use heed::EnvOpenOptions;
 
@@ -34,8 +35,9 @@ impl Database {
     }
 }
 
+#[async_trait]
 impl IndexesDatabase for Database {
-    fn set_size(&self, index: &mut Index) -> Result<(), Error> {
+    async fn set_size(&self, index: &mut Index) -> Result<(), Error> {
         let txn = self.env.read_txn()?;
 
         index.size = Some(
@@ -48,7 +50,7 @@ impl IndexesDatabase for Database {
         Ok(())
     }
 
-    fn fetch(
+    async fn fetch(
         &self,
         index: &Index,
         table: Table,
@@ -66,7 +68,7 @@ impl IndexesDatabase for Database {
         Ok(uids_and_values)
     }
 
-    fn upsert_entries(
+    async fn upsert_entries(
         &self,
         index: &Index,
         data: UpsertData<UID_LENGTH>,
@@ -104,7 +106,11 @@ impl IndexesDatabase for Database {
         Ok(rejected)
     }
 
-    fn insert_chains(&self, index: &Index, data: EncryptedTable<UID_LENGTH>) -> Result<(), Error> {
+    async fn insert_chains(
+        &self,
+        index: &Index,
+        data: EncryptedTable<UID_LENGTH>,
+    ) -> Result<(), Error> {
         let mut txn = self.env.write_txn()?;
         let mut size = self
             .db
@@ -125,7 +131,7 @@ impl IndexesDatabase for Database {
     }
 
     #[cfg(feature = "log_requests")]
-    fn fetch_all_as_json(&self, _index: &Index, _table: Table) -> Result<String, Error> {
+    async fn fetch_all_as_json(&self, _index: &Index, _table: Table) -> Result<String, Error> {
         todo!()
     }
 }

@@ -8,8 +8,10 @@ use actix_web::{
     web::{Bytes, Data, Path},
     FromRequest,
 };
+use async_trait::async_trait;
 use cloudproof_findex::cloud::{CALLBACK_SIGNATURE_LENGTH, SIGNATURE_SEED_LENGTH};
 
+use chrono::NaiveDateTime;
 use cosmian_crypto_core::bytes_ser_de::Serializable;
 use cosmian_findex::{
     kmac,
@@ -17,16 +19,11 @@ use cosmian_findex::{
     EncryptedTable, KeyingMaterial, Uid, UpsertData,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{types::chrono::NaiveDateTime, SqlitePool};
 
 #[cfg(feature = "multitenant")]
 use crate::auth0::Auth;
 
 use crate::errors::Error;
-
-pub(crate) struct Id {
-    pub(crate) id: i64,
-}
 
 #[derive(Serialize, Debug)]
 pub(crate) struct Index {
@@ -45,6 +42,18 @@ pub(crate) struct Index {
     #[serde(skip_serializing)]
     #[allow(dead_code)]
     pub(crate) deleted_at: Option<NaiveDateTime>,
+}
+
+#[derive(Debug)]
+pub(crate) struct NewIndex {
+    pub(crate) public_id: String,
+    pub(crate) authz_id: String,
+    pub(crate) project_uuid: String,
+    pub(crate) name: String,
+    pub(crate) fetch_entries_key: Vec<u8>,
+    pub(crate) fetch_chains_key: Vec<u8>,
+    pub(crate) upsert_entries_key: Vec<u8>,
+    pub(crate) insert_chains_key: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -113,34 +122,47 @@ pub(crate) enum Table {
     Chains,
 }
 
+#[async_trait]
 pub(crate) trait IndexesDatabase: Sync + Send {
-    fn set_sizes(&self, indexes: &mut Vec<Index>) -> Result<(), Error> {
+    async fn set_sizes(&self, indexes: &mut Vec<Index>) -> Result<(), Error> {
         for index in indexes {
-            self.set_size(index)?;
+            self.set_size(index).await?;
         }
 
         Ok(())
     }
 
-    fn set_size(&self, indexes: &mut Index) -> Result<(), Error>;
+    async fn set_size(&self, indexes: &mut Index) -> Result<(), Error>;
 
-    fn fetch(
+    async fn fetch(
         &self,
         index: &Index,
         table: Table,
         uids: HashSet<Uid<UID_LENGTH>>,
     ) -> Result<EncryptedTable<UID_LENGTH>, Error>;
 
-    fn upsert_entries(
+    async fn upsert_entries(
         &self,
         index: &Index,
         data: UpsertData<UID_LENGTH>,
     ) -> Result<EncryptedTable<UID_LENGTH>, Error>;
 
-    fn insert_chains(&self, index: &Index, data: EncryptedTable<UID_LENGTH>) -> Result<(), Error>;
+    async fn insert_chains(
+        &self,
+        index: &Index,
+        data: EncryptedTable<UID_LENGTH>,
+    ) -> Result<(), Error>;
 
     #[cfg(feature = "log_requests")]
-    fn fetch_all_as_json(&self, index: &Index, table: Table) -> Result<String, Error>;
+    async fn fetch_all_as_json(&self, index: &Index, table: Table) -> Result<String, Error>;
+}
+
+#[async_trait]
+pub(crate) trait MetadataDatabase: Sync + Send {
+    async fn get_indexes(&self, project_uuid: &str) -> Result<Vec<Index>, Error>;
+    async fn get_index(&self, public_id: &str) -> Result<Option<Index>, Error>;
+    async fn delete_index(&self, public_id: &str) -> Result<(), Error>;
+    async fn create_index(&self, new_index: NewIndex) -> Result<Index, Error>;
 }
 
 impl FromRequest for Index {
@@ -151,41 +173,20 @@ impl FromRequest for Index {
         let req = req.clone();
 
         Box::pin(async move {
-            let pool = req.app_data::<Data<SqlitePool>>().unwrap();
-            let mut db = pool.acquire().await?;
+            let metadata_database = req.app_data::<Data<dyn MetadataDatabase>>().unwrap();
 
             let public_id: Path<String> = Path::<String>::extract(&req)
                 .await
                 .map_err(|_| Error::WrongIndexPublicId)?;
 
-            let index = sqlx::query_as!(
-                Index,
-                r#"SELECT *, null as "size: _" FROM indexes WHERE public_id = $1 AND deleted_at IS NULL"#,
-                *public_id
-            )
-            .fetch_optional(&mut db)
-            .await?;
+            let index = metadata_database.get_index(&public_id).await?;
 
             if let Some(index) = index {
                 Ok(index)
             } else {
-                // Retry a second time because sometimes SQLite doesn't return the index even if it exists inside the DB.
-                // Don't know why…
-                let index = sqlx::query_as!(
-                    Index,
-                    r#"SELECT *, null as "size: _" FROM indexes WHERE public_id = $1 AND deleted_at IS NULL"#,
-                    *public_id
-                )
-                .fetch_optional(&mut db)
-                .await?;
-
-                if let Some(index) = index {
-                    Ok(index)
-                } else {
-                    Err(Error::BadRequest(format!(
-                        "Unknown index for ID {public_id}"
-                    )))
-                }
+                Err(Error::BadRequest(format!(
+                    "Unknown index for ID {public_id}"
+                )))
             }
         })
     }

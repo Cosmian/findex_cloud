@@ -24,6 +24,7 @@ pub type ResponseBytes = Result<HttpResponse, Error>;
 
 #[derive(Debug)]
 pub enum Error {
+    #[cfg(feature = "sqlite")]
     Sqlx(sqlx::Error),
     InvalidSignature,
     WrongEncoding,
@@ -65,6 +66,8 @@ pub enum Error {
     Rocksdb(rocksdb::Error),
     #[cfg(feature = "heed")]
     Heed(heed::Error),
+    #[cfg(feature = "dynamodb")]
+    DynamoDb(String),
 
     BadRequest(String),
 }
@@ -88,7 +91,10 @@ impl ResponseError for Error {
         log::error!("{self:?}");
 
         match *self {
+            #[cfg(feature = "sqlite")]
             Self::Sqlx(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            #[cfg(feature = "dynamodb")]
+            Self::DynamoDb(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidSignature => StatusCode::FORBIDDEN,
             Self::WrongEncoding => StatusCode::BAD_REQUEST,
             Self::Json => StatusCode::BAD_REQUEST,
@@ -132,6 +138,7 @@ impl ResponseError for Error {
     }
 }
 
+#[cfg(feature = "sqlite")]
 impl From<sqlx::Error> for Error {
     fn from(err: sqlx::Error) -> Self {
         Error::Sqlx(err)
@@ -149,6 +156,13 @@ impl From<rocksdb::Error> for Error {
 impl From<heed::Error> for Error {
     fn from(err: heed::Error) -> Self {
         Error::Heed(err)
+    }
+}
+
+#[cfg(feature = "dynamodb")]
+impl<T> From<aws_smithy_http::result::SdkError<T>> for Error {
+    fn from(err: aws_smithy_http::result::SdkError<T>) -> Self {
+        Error::DynamoDb(err.to_string())
     }
 }
 

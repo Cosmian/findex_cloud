@@ -70,7 +70,7 @@ pub(crate) async fn export_entries_for_index(
     index: Index,
     indexes: Data<dyn IndexesDatabase>,
 ) -> Result<String, Error> {
-    indexes.fetch_all_as_json(&index, Table::Entries)
+    indexes.fetch_all_as_json(&index, Table::Entries).await
 }
 
 #[get("/export_chains_for_index/{public_id}")]
@@ -78,7 +78,7 @@ pub(crate) async fn export_chains_for_index(
     index: Index,
     indexes: Data<dyn IndexesDatabase>,
 ) -> Result<String, Error> {
-    indexes.fetch_all_as_json(&index, Table::Chains)
+    indexes.fetch_all_as_json(&index, Table::Chains).await
 }
 
 #[post("/reset_requests_log")]

@@ -1,5 +1,6 @@
 use std::{collections::HashSet, iter::zip};
 
+use async_trait::async_trait;
 use cosmian_findex::{parameters::UID_LENGTH, EncryptedTable, Uid, UpsertData};
 use rocksdb::{MergeOperands, Options, TransactionDB, TransactionDBOptions};
 
@@ -28,8 +29,9 @@ impl Database {
     }
 }
 
+#[async_trait]
 impl IndexesDatabase for Database {
-    fn set_size(&self, index: &mut Index) -> Result<(), Error> {
+    async fn set_size(&self, index: &mut Index) -> Result<(), Error> {
         index.size = Some(
             self.0
                 .get(size_key(index))?
@@ -40,7 +42,7 @@ impl IndexesDatabase for Database {
         Ok(())
     }
 
-    fn fetch(
+    async fn fetch(
         &self,
         index: &Index,
         table: Table,
@@ -62,7 +64,7 @@ impl IndexesDatabase for Database {
         Ok(uids_and_values)
     }
 
-    fn upsert_entries(
+    async fn upsert_entries(
         &self,
         index: &Index,
         data: UpsertData<UID_LENGTH>,
@@ -113,7 +115,11 @@ impl IndexesDatabase for Database {
         Ok(rejected)
     }
 
-    fn insert_chains(&self, index: &Index, data: EncryptedTable<UID_LENGTH>) -> Result<(), Error> {
+    async fn insert_chains(
+        &self,
+        index: &Index,
+        data: EncryptedTable<UID_LENGTH>,
+    ) -> Result<(), Error> {
         let mut size = 0;
         for (uid, value) in data {
             size += value.len();
@@ -126,7 +132,7 @@ impl IndexesDatabase for Database {
     }
 
     #[cfg(feature = "log_requests")]
-    fn fetch_all_as_json(&self, index: &Index, table: Table) -> Result<String, Error> {
+    async fn fetch_all_as_json(&self, index: &Index, table: Table) -> Result<String, Error> {
         use base64::{engine::general_purpose, Engine};
         use rocksdb::{Direction, IteratorMode};
 
