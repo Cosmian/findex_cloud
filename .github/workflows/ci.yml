@@ -24,7 +24,7 @@ jobs:
         run: |
           rustup component add clippy --toolchain nightly
           cargo clippy
-          cargo clippy --features multitenant
+          cargo clippy --all-features
       - name: Build
         run: cargo build --release --features multitenant
       - name: Push to package.cosmian.com
