@@ -20,6 +20,30 @@ use crate::{
     errors::Error,
 };
 
+/// DynamoDB implementation
+///
+/// Use 3 tables, one for the metadata (indexes names, keys), one for the entries
+/// and one for the chains.
+///
+/// Entries and chains IDs are composed of the index `public_id` as bytes concat with
+/// the UID. Maybe we could split that and use a composed index in DynamoDB? Having
+/// a composed index may be useful to compute the size of one index.
+///
+/// Metadata are indexed by `public_id` since it's the value we got on most of the endpoints.
+/// The `id` column seems useless, maybe we should removed it from all the implementations?
+///
+/// Right now, the user is expected to have the correct tables inside it's DynamoDB instance.
+/// But we could imagine creating the table on the fly with the correct indexes (right now, the indexes
+/// are not complex but it could become complex in the future we the growing needs.)
+///
+/// TODO
+/// - Documentation on table creation
+/// - `get_indexes()` (should add `project_uuid` as a index to get all the values matching)
+/// - Parallelize the `upsert_entries` :ParallelizeUpsertEntries
+/// - Try to remove clones everywhere
+/// - Split ID in two columns (index_public_id and uid) in entries and chains?
+/// - Implement sizes (right now this implementation do not know the sizes of the tables for one index)
+/// - In the rare case of collusion for a `public_id` retry with a new one? :UniquePublicId
 pub struct Database {
     client: Client,
 
@@ -28,6 +52,7 @@ pub struct Database {
     chains_table_name: String,
 }
 
+const DYNAMODB_MAX_BATCH_ELEMENTS: usize = 25;
 const ENTRIES_AND_CHAINS_ID_COLUMN_NAME: &str = "id";
 const ENTRIES_AND_CHAINS_VALUE_COLUMN_NAME: &str = "value_bytes"; // 'value' is a reserved keyword in dynamodb
 
@@ -65,6 +90,7 @@ impl Database {
         }
     }
 
+    /// Fail if the uid doesn't exist
     async fn fetch_value(&self, index: &Index, table: Table, uid: &[u8]) -> Result<Vec<u8>, Error> {
         let result = self
             .client
@@ -146,10 +172,19 @@ impl IndexesDatabase for Database {
     ) -> Result<EncryptedTable<UID_LENGTH>, Error> {
         let mut rejected = EncryptedTable::<UID_LENGTH>::with_capacity(1);
 
+        // This function is using a loop instead of a batch_* function
+        // because DynamoDB doesn't support conditional expression on batches.
+        // :ParallelizeUpsertEntries
         let data: Vec<_> = data.into_iter().collect();
-
         for (uid, (old_value, new_value)) in data {
             if let Some(old_value) = old_value {
+                // If there is an `old_value`, we `update_item()` with a conditional
+                // expression checking the previously stored value against the `old_value`.
+                //
+                // The value should always exists inside the database (except in case of a compact).
+                // I don't know if `update_item()` fail with a specific error code if the key doesn't
+                // exists (it should fail since it's a `update_item()` and not a `put_item()`).
+
                 let result = self
                     .client
                     .update_item()
@@ -177,6 +212,9 @@ impl IndexesDatabase for Database {
                     .send()
                     .await;
 
+                // If the conditional expression fails, we need to fetch
+                // the stored value (it's impossible to return the value from an error
+                // in DynamoDB) for Findex to retry with the correct `old_value`
                 match result {
                     Ok(_) => {}
                     Err(SdkError::ServiceError(err))
@@ -194,6 +232,10 @@ impl IndexesDatabase for Database {
                     }
                 }
             } else {
+                // Here we don't have an `old_value` so we can use `put_item()`
+                // with an `attribute_not_exists(id)` conditional expression to check
+                // that the key doesn't already exist.
+
                 let result = self
                     .client
                     .put_item()
@@ -209,10 +251,13 @@ impl IndexesDatabase for Database {
                     .condition_expression(format!(
                         "attribute_not_exists({})",
                         ENTRIES_AND_CHAINS_ID_COLUMN_NAME
-                    )) // only if it doesn't exists
+                    ))
                     .send()
                     .await;
 
+                // If the conditional expression fails, we need to fetch
+                // the stored value (it's impossible to return the value from an error
+                // in DynamoDB) for Findex to retry with the correct `old_value`
                 match result {
                     Ok(_) => {}
                     Err(SdkError::ServiceError(err))
@@ -242,7 +287,7 @@ impl IndexesDatabase for Database {
     ) -> Result<(), Error> {
         let data: Vec<_> = data.into_iter().collect();
 
-        for chunk in data.chunks(25) {
+        for chunk in data.chunks(DYNAMODB_MAX_BATCH_ELEMENTS) {
             self.client
                 .batch_write_item()
                 .request_items(
@@ -351,6 +396,8 @@ impl MetadataDatabase for Database {
             deleted_at: None,
         };
 
+        // This will override the previous index if the `public_id` is not unique
+        // :UniquePublicId
         self.client
             .put_item()
             .table_name("metadata")
@@ -389,6 +436,8 @@ impl MetadataDatabase for Database {
     }
 }
 
+/// Create the ID to store inside DynamoDB from Index `public_id` and `uid`
+/// This function is the inverse of `extract_uid_from_stored_id`.
 fn get_uid_attribute_value(index: &Index, uid: &[u8]) -> AttributeValue {
     let public_id_bytes = index.public_id.as_bytes();
 
@@ -399,6 +448,8 @@ fn get_uid_attribute_value(index: &Index, uid: &[u8]) -> AttributeValue {
     AttributeValue::B(Blob::new(id))
 }
 
+/// Extract the `uid` from the ID stored inside DynamoDB
+/// This function is the inverse of `get_uid_attribute_value`.
 fn extract_uid_from_stored_id(id: Vec<u8>) -> Result<Uid<UID_LENGTH>, Error> {
     let uid: [u8; UID_LENGTH] =
         id.as_slice()[id.len() - UID_LENGTH..]
