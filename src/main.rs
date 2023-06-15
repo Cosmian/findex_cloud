@@ -18,7 +18,7 @@ use actix_web::web::PayloadConfig;
 use actix_web::web::Query;
 
 use crate::{
-    core::{check_body_signature, Index},
+    core::{check_body_signature, Index, MetadataCache},
     errors::{Response, ResponseBytes},
 };
 use actix_cors::Cors;
@@ -171,10 +171,13 @@ async fn post_indexes(
 async fn get_index(
     #[cfg(feature = "multitenant")] auth: Auth,
     public_id: Path<String>,
+    metadata_cache: Data<MetadataCache>,
     metadata_db: Data<dyn MetadataDatabase>,
     indexes_db: Data<dyn IndexesDatabase>,
 ) -> Response<Index> {
-    let index = metadata_db.get_index(&public_id).await?;
+    let index = metadata_db
+        .get_index_with_cache(&metadata_cache, &public_id)
+        .await?;
 
     if let Some(mut index) = index {
         #[cfg(feature = "multitenant")]
@@ -197,11 +200,14 @@ async fn get_index(
 async fn delete_index(
     #[cfg(feature = "multitenant")] auth: Auth,
     public_id: Path<String>,
+    metadata_cache: Data<MetadataCache>,
     metadata_db: Data<dyn MetadataDatabase>,
 ) -> Response<()> {
     #[cfg(feature = "multitenant")]
     {
-        let index = metadata_db.get_index(&public_id).await?;
+        let index = metadata_db
+            .get_index_with_cache(&metadata_cache, &public_id)
+            .await?;
         if let Some(index) = index {
             if auth.authz_id != index.authz_id {
                 return Err(Error::BadRequest(format!(
@@ -212,6 +218,9 @@ async fn delete_index(
     }
 
     metadata_db.delete_index(&public_id).await?;
+    if let Ok(mut cache) = metadata_cache.write() {
+        cache.remove(public_id.as_str());
+    }
 
     Ok(Json(()))
 }
@@ -323,6 +332,8 @@ async fn start_server(ipv6: bool) -> std::io::Result<()> {
     #[cfg(feature = "multitenant")]
     let backend = Data::new(Backend::from_env());
 
+    let metadata_cache: Data<MetadataCache> = Data::new(Default::default());
+
     let indexes_database: Data<dyn IndexesDatabase> = match env::var("INDEXES_DATABASE_TYPE").as_deref().unwrap_or("rocksdb") {
             #[cfg(feature = "heed")]
             "heed" => Data::from(Arc::new(crate::heed::Database::create()) as Arc<dyn IndexesDatabase>),
@@ -364,6 +375,7 @@ async fn start_server(ipv6: bool) -> std::io::Result<()> {
         let mut app = App::new()
             .wrap(Cors::permissive())
             .wrap(Logger::default())
+            .app_data(metadata_cache.clone())
             .app_data(indexes_database.clone())
             .app_data(metadata_database.clone())
             .app_data(PayloadConfig::new(50_000_000))

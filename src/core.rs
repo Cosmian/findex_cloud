@@ -1,7 +1,13 @@
 #[cfg(feature = "multitenant")]
 use std::env;
 
-use std::{collections::HashSet, future::Future, pin::Pin, time::SystemTime};
+use std::{
+    collections::{HashMap, HashSet},
+    future::Future,
+    pin::Pin,
+    sync::RwLock,
+    time::SystemTime,
+};
 
 use actix_web::{
     dev::Payload,
@@ -25,7 +31,7 @@ use crate::auth0::Auth;
 
 use crate::errors::Error;
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub(crate) struct Index {
     #[serde(skip_serializing)]
     pub(crate) id: i64,
@@ -157,10 +163,37 @@ pub(crate) trait IndexesDatabase: Sync + Send {
     async fn fetch_all_as_json(&self, index: &Index, table: Table) -> Result<String, Error>;
 }
 
+pub(crate) type MetadataCache = RwLock<HashMap<String, Index>>;
+
 #[async_trait]
 pub(crate) trait MetadataDatabase: Sync + Send {
     async fn get_indexes(&self, project_uuid: &str) -> Result<Vec<Index>, Error>;
+
     async fn get_index(&self, public_id: &str) -> Result<Option<Index>, Error>;
+    async fn get_index_with_cache(
+        &self,
+        cache: &MetadataCache,
+        public_id: &str,
+    ) -> Result<Option<Index>, Error> {
+        if let Ok(cache) = cache.read() {
+            if let Some(index) = cache.get(public_id) {
+                return Ok(Some(index.clone()));
+            }
+        }
+
+        let index = self.get_index(public_id).await?;
+
+        if let Some(index) = index {
+            if let Ok(mut cache) = cache.write() {
+                cache.insert(public_id.to_string(), index.clone());
+            }
+
+            return Ok(Some(index));
+        }
+
+        return Ok(None);
+    }
+
     async fn delete_index(&self, public_id: &str) -> Result<(), Error>;
     async fn create_index(&self, new_index: NewIndex) -> Result<Index, Error>;
 }
@@ -173,13 +206,16 @@ impl FromRequest for Index {
         let req = req.clone();
 
         Box::pin(async move {
+            let metadata_cache = req.app_data::<Data<MetadataCache>>().unwrap();
             let metadata_database = req.app_data::<Data<dyn MetadataDatabase>>().unwrap();
 
             let public_id: Path<String> = Path::<String>::extract(&req)
                 .await
                 .map_err(|_| Error::WrongIndexPublicId)?;
 
-            let index = metadata_database.get_index(&public_id).await?;
+            let index = metadata_database
+                .get_index_with_cache(&metadata_cache, &public_id)
+                .await?;
 
             if let Some(index) = index {
                 Ok(index)

@@ -4,7 +4,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use aws_config::environment::EnvironmentVariableCredentialsProvider;
+use aws_config::{environment::EnvironmentVariableCredentialsProvider, retry::RetryConfigBuilder};
 use aws_sdk_dynamodb::{
     operation::{put_item::PutItemError, update_item::UpdateItemError},
     primitives::Blob,
@@ -59,7 +59,8 @@ const ENTRIES_AND_CHAINS_VALUE_COLUMN_NAME: &str = "value_bytes"; // 'value' is 
 impl Database {
     pub async fn create() -> Self {
         let mut config_builder = aws_config::from_env()
-            .credentials_provider(EnvironmentVariableCredentialsProvider::new());
+            .credentials_provider(EnvironmentVariableCredentialsProvider::new())
+            .retry_config(RetryConfigBuilder::new().max_attempts(10).build());
 
         if let Ok(url) = env::var("AWS_DYNAMODB_ENDPOINT_URL") {
             config_builder = config_builder.endpoint_url(url)
@@ -400,7 +401,7 @@ impl MetadataDatabase for Database {
         // :UniquePublicId
         self.client
             .put_item()
-            .table_name("metadata")
+            .table_name(&self.metadata_table_name)
             .item("id", AttributeValue::N(index.id.to_string()))
             .item("public_id", AttributeValue::S(index.public_id.clone()))
             .item("authz_id", AttributeValue::S(index.authz_id.clone()))
