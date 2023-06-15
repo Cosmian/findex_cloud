@@ -31,7 +31,7 @@ WORKDIR /backend
 
 RUN apt-get update && \
     apt-get install --no-install-recommends -qq -y \
-    libssl-dev && \
+    libssl-dev ca-certificates && \
     rm -fr /var/lib/apt/lists/*
 
 RUN mkdir static
