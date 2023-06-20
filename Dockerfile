@@ -45,4 +45,5 @@ ENV DATABASE_URL=sqlite://data/database.sqlite
 RUN mkdir data
 RUN touch data/database.sqlite
 
+EXPOSE 8080
 CMD ["findex_cloud"]
