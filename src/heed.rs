@@ -98,7 +98,7 @@ impl IndexesDatabase for Database {
 
                 self.db.put(&mut txn, &key, &new_value)?;
             } else {
-                rejected.insert(uid.clone(), existing_value.unwrap().to_vec());
+                rejected.insert(uid, existing_value.unwrap().to_vec());
             }
         }
         txn.commit()?;

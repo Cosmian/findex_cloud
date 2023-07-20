@@ -93,7 +93,7 @@ impl IndexesDatabase for Database {
                         }
                     };
 
-                    rejected.insert(uid.clone(), value);
+                    rejected.insert(uid, value);
                     continue;
                 }
                 err => err?,
@@ -108,7 +108,7 @@ impl IndexesDatabase for Database {
                 transaction.commit()?;
             } else {
                 transaction.rollback()?;
-                rejected.insert(uid.clone(), existing_value.unwrap());
+                rejected.insert(uid, existing_value.unwrap());
             }
         }
 

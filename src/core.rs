@@ -99,9 +99,8 @@ pub(crate) fn check_body_signature(
     let data: Vec<_> = bytes.collect();
 
     let key: KmacKey =
-        KeyingMaterial::<SIGNATURE_SEED_LENGTH>::try_from_bytes(seed.to_vec().as_slice())
-            .unwrap()
-            .derive_kmac_key(index_id.as_bytes());
+        KeyingMaterial::<SIGNATURE_SEED_LENGTH>::deserialize(seed.to_vec().as_slice())?
+            .derive_kmac_key::<CALLBACK_SIGNATURE_LENGTH>(index_id.as_bytes());
 
     let signature_computed = kmac!(CALLBACK_SIGNATURE_LENGTH, &key, &timestamp_bytes, &data);
 
@@ -214,7 +213,7 @@ impl FromRequest for Index {
                 .map_err(|_| Error::WrongIndexPublicId)?;
 
             let index = metadata_database
-                .get_index_with_cache(&metadata_cache, &public_id)
+                .get_index_with_cache(metadata_cache, &public_id)
                 .await?;
 
             if let Some(index) = index {

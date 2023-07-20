@@ -248,9 +248,13 @@ async fn fetch_entries(
         &uids_and_values,
     );
 
+    // `.to_vec()` go out of the Zeroize but I don't think we can return the
+    // bytes with the `HttpResponse.body()` without it.
+    let bytes = uids_and_values.serialize()?.to_vec();
+
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
-        .body(uids_and_values.try_to_bytes()?))
+        .body(bytes))
 }
 
 #[post("/indexes/{public_id}/fetch_chains")]
@@ -276,9 +280,13 @@ async fn fetch_chains(
         &uids_and_values,
     );
 
+    // `.to_vec()` go out of the Zeroize but I don't think we can return the
+    // bytes with the `HttpResponse.body()` without it.
+    let bytes = uids_and_values.serialize()?.to_vec();
+
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
-        .body(uids_and_values.try_to_bytes()?))
+        .body(bytes))
 }
 
 #[post("/indexes/{public_id}/upsert_entries")]
@@ -288,13 +296,17 @@ async fn upsert_entries(
     indexes: Data<dyn IndexesDatabase>,
 ) -> ResponseBytes {
     let bytes = check_body_signature(bytes, &index.public_id, &index.upsert_entries_key)?;
-    let data = UpsertData::<UID_LENGTH>::try_from_bytes(&bytes)?;
+    let data = UpsertData::<UID_LENGTH>::deserialize(&bytes)?;
 
     let rejected = indexes.upsert_entries(&index, data).await?;
 
+    // `.to_vec()` go out of the Zeroize but I don't think we can return the
+    // bytes with the `HttpResponse.body()` without it.
+    let bytes = rejected.serialize()?.to_vec();
+
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
-        .body(rejected.try_to_bytes()?))
+        .body(bytes))
 }
 
 #[post("/indexes/{public_id}/insert_chains")]
@@ -304,7 +316,7 @@ async fn insert_chains(
     indexes: Data<dyn IndexesDatabase>,
 ) -> Response<()> {
     let bytes = check_body_signature(bytes, &index.public_id, &index.insert_chains_key)?;
-    let data = EncryptedTable::<UID_LENGTH>::try_from_bytes(&bytes)?;
+    let data = EncryptedTable::<UID_LENGTH>::deserialize(&bytes)?;
 
     indexes.insert_chains(&index, data).await?;
 
