@@ -92,18 +92,17 @@ pub(crate) fn save_log(
     time_diff_mutex: Data<std::sync::RwLock<TimeDiffInMilliseconds>>,
     uids: std::collections::HashSet<Uid<UID_LENGTH>>,
     uids_and_values: &cosmian_findex::EncryptedTable<UID_LENGTH>,
-) {
+) -> Result<(), Error> {
     let mut file = OpenOptions::new()
         .create(true)
         .write(true)
         .append(true)
         .open(LOGS_PATH)
-        .unwrap();
+        .map_err(|_| Error::BadRequest(format!("Cannot open {}", LOGS_PATH)))?;
 
     let current_time = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(|_| Error::BadRequest("SystemTime is before UNIX_EPOCH".to_owned()))
-        .unwrap();
+        .map_err(|_| Error::BadRequest("SystemTime is before UNIX_EPOCH".to_owned()))?;
 
     let data: HashMap<String, Option<String>> = uids
         .iter()
@@ -128,5 +127,11 @@ pub(crate) fn save_log(
         "type": log_type,
         "data": data,
     });
-    writeln!(file, "{}", serde_json::to_string(&json).unwrap()).unwrap();
+
+    let json_string = serde_json::to_string(&json)
+        .map_err(|_| Error::BadRequest(format!("Cannot convert to JSON {json:?}")))?;
+    writeln!(file, "{json_string}",)
+        .map_err(|_| Error::BadRequest(format!("Cannot write JSON '{json_string}' to file")))?;
+
+    Ok(())
 }

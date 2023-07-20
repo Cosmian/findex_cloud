@@ -246,7 +246,7 @@ async fn fetch_entries(
         time_diff_mutex,
         cloned_uids,
         &uids_and_values,
-    );
+    )?;
 
     // `.to_vec()` go out of the Zeroize but I don't think we can return the
     // bytes with the `HttpResponse.body()` without it.
@@ -278,7 +278,7 @@ async fn fetch_chains(
         time_diff_mutex,
         cloned_uids,
         &uids_and_values,
-    );
+    )?;
 
     // `.to_vec()` go out of the Zeroize but I don't think we can return the
     // bytes with the `HttpResponse.body()` without it.

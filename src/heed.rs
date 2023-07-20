@@ -43,7 +43,8 @@ impl IndexesDatabase for Database {
         index.size = Some(
             self.db
                 .get(&txn, &size_key(index))?
-                .map(|bytes| usize::from_be_bytes(bytes.try_into().unwrap()) as i64)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(|bytes| usize::from_be_bytes(bytes) as i64)
                 .unwrap_or(0),
         );
 
@@ -86,7 +87,8 @@ impl IndexesDatabase for Database {
                     let size = self
                         .db
                         .get(&txn, &size_key(index))?
-                        .map(|bytes| usize::from_be_bytes(bytes.try_into().unwrap()) as i64)
+                        .and_then(|bytes| bytes.try_into().ok())
+                        .map(|bytes| usize::from_be_bytes(bytes) as i64)
                         .unwrap_or(0);
 
                     self.db.put(
@@ -97,8 +99,12 @@ impl IndexesDatabase for Database {
                 }
 
                 self.db.put(&mut txn, &key, &new_value)?;
+            } else if let Some(existing_value) = existing_value {
+                rejected.insert(uid, existing_value.to_vec());
             } else {
-                rejected.insert(uid, existing_value.unwrap().to_vec());
+                log::error!(
+                    "Receive an `old_value` {old_value:?} but no existing value inside DB for UID {uid:?}."
+                );
             }
         }
         txn.commit()?;
@@ -115,7 +121,8 @@ impl IndexesDatabase for Database {
         let mut size = self
             .db
             .get(&txn, &size_key(index))?
-            .map(|bytes| usize::from_be_bytes(bytes.try_into().unwrap()) as i64)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(|bytes| usize::from_be_bytes(bytes) as i64)
             .unwrap_or(0);
         for (uid, value) in data {
             size += value.len() as i64;

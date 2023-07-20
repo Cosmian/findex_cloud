@@ -22,8 +22,8 @@ impl Database {
         let mut txn_db_opts = TransactionDBOptions::default();
         txn_db_opts.set_txn_lock_timeout(10);
 
-        let transaction_db: TransactionDB =
-            TransactionDB::open(&opts, &txn_db_opts, indexes_url).unwrap();
+        let transaction_db: TransactionDB = TransactionDB::open(&opts, &txn_db_opts, indexes_url)
+            .expect("Cannot open RocksDB database");
 
         Database(transaction_db)
     }
@@ -35,7 +35,8 @@ impl IndexesDatabase for Database {
         index.size = Some(
             self.0
                 .get(size_key(index))?
-                .map(|bytes| usize::from_be_bytes(bytes.try_into().unwrap()) as i64)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(|bytes| usize::from_be_bytes(bytes) as i64)
                 .unwrap_or(0),
         );
 
@@ -55,7 +56,7 @@ impl IndexesDatabase for Database {
             .multi_get(uids.iter().map(|uid| key(index, table, uid)));
 
         for (uid, value) in zip(uids.into_iter(), values.into_iter()) {
-            let value = value.unwrap();
+            let value = value?;
             if let Some(value) = value {
                 uids_and_values.insert(uid, value);
             }
@@ -108,7 +109,13 @@ impl IndexesDatabase for Database {
                 transaction.commit()?;
             } else {
                 transaction.rollback()?;
-                rejected.insert(uid, existing_value.unwrap());
+                if let Some(existing_value) = existing_value {
+                    rejected.insert(uid, existing_value);
+                } else {
+                    log::error!(
+                        "Receive an `old_value` {old_value:?} but no existing value inside DB for UID {uid:?}."
+                    );
+                }
             }
         }
 
