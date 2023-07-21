@@ -14,6 +14,7 @@ use aws_sdk_dynamodb::{
 use aws_smithy_http::result::SdkError;
 use chrono::{NaiveDateTime, Utc};
 use cosmian_findex::{parameters::UID_LENGTH, EncryptedTable, Uid, UpsertData};
+use futures::StreamExt;
 
 use crate::{
     core::{Index, IndexesDatabase, MetadataDatabase, NewIndex, Table},
@@ -39,7 +40,6 @@ use crate::{
 /// TODO
 /// - Documentation on table creation
 /// - `get_indexes()` (should add `project_uuid` as a index to get all the values matching)
-/// - Parallelize the `upsert_entries` :ParallelizeUpsertEntries
 /// - Try to remove clones everywhere
 /// - Split ID in two columns (index_public_id and uid) in entries and chains?
 /// - Implement sizes (right now this implementation do not know the sizes of the tables for one index)
@@ -52,7 +52,13 @@ pub struct Database {
     chains_table_name: String,
 }
 
-const DYNAMODB_MAX_BATCH_ELEMENTS: usize = 25;
+const DYNAMODB_MAX_READ_ELEMENTS: usize = 100;
+const DYNAMODB_MAX_WRITE_ELEMENTS: usize = 25;
+
+/// DynomoDB doesn't provide a way to batch upsert requests,
+/// but we use async to do x of them in parallel. If this value
+/// is too high it can crash.
+const DYNAMODB_NUMBER_OF_PARALLEL_UPSERT_REQUEST: usize = 30;
 const ENTRIES_AND_CHAINS_ID_COLUMN_NAME: &str = "id";
 const ENTRIES_AND_CHAINS_VALUE_COLUMN_NAME: &str = "value_bytes"; // 'value' is a reserved keyword in dynamodb
 
@@ -115,6 +121,113 @@ impl Database {
 
         extract_bytes(item, ENTRIES_AND_CHAINS_VALUE_COLUMN_NAME)
     }
+
+    async fn upsert_entry(
+        &self,
+        index: &Index,
+        uid: Uid<UID_LENGTH>,
+        old_value: Option<Vec<u8>>,
+        new_value: Vec<u8>,
+    ) -> Result<Option<(Uid<UID_LENGTH>, Vec<u8>)>, Error> {
+        if let Some(old_value) = old_value {
+            // If there is an `old_value`, we `update_item()` with a conditional
+            // expression checking the previously stored value against the `old_value`.
+            //
+            // The value should always exists inside the database (except in case of a compact).
+            // I don't know if `update_item()` fail with a specific error code if the key doesn't
+            // exists (it should fail since it's a `update_item()` and not a `put_item()`).
+
+            let result = self
+                .client
+                .update_item()
+                .table_name(self.get_table_name(Table::Entries))
+                .key(
+                    ENTRIES_AND_CHAINS_ID_COLUMN_NAME,
+                    get_uid_attribute_value(index, &uid),
+                )
+                .update_expression(format!(
+                    "SET {} = :new",
+                    ENTRIES_AND_CHAINS_VALUE_COLUMN_NAME
+                ))
+                .expression_attribute_values(
+                    ":old",
+                    AttributeValue::B(Blob::new(old_value.clone())),
+                )
+                .expression_attribute_values(
+                    ":new",
+                    AttributeValue::B(Blob::new(new_value.clone())),
+                )
+                .condition_expression(format!("{} = :old", ENTRIES_AND_CHAINS_VALUE_COLUMN_NAME))
+                .send()
+                .await;
+
+            // If the conditional expression fails, we need to fetch
+            // the stored value (it's impossible to return the value from an error
+            // in DynamoDB) for Findex to retry with the correct `old_value`
+            match result {
+                Ok(_) => Ok(None),
+                Err(SdkError::ServiceError(err))
+                    if matches!(
+                        err.err(),
+                        UpdateItemError::ConditionalCheckFailedException { .. }
+                    ) =>
+                {
+                    let value = self.fetch_value(index, Table::Entries, &uid).await?;
+                    // rejected.insert(uid, value);
+                    Ok(Some((uid, value)))
+                }
+                Err(err) => {
+                    // dbg!(&err);
+                    Err(Error::from(err))
+                }
+            }
+        } else {
+            // Here we don't have an `old_value` so we can use `put_item()`
+            // with an `attribute_not_exists(id)` conditional expression to check
+            // that the key doesn't already exist.
+
+            let result = self
+                .client
+                .put_item()
+                .table_name(self.get_table_name(Table::Entries))
+                .item(
+                    ENTRIES_AND_CHAINS_ID_COLUMN_NAME,
+                    get_uid_attribute_value(index, &uid),
+                )
+                .item(
+                    ENTRIES_AND_CHAINS_VALUE_COLUMN_NAME,
+                    AttributeValue::B(Blob::new(new_value.clone())),
+                )
+                .condition_expression(format!(
+                    "attribute_not_exists({})",
+                    ENTRIES_AND_CHAINS_ID_COLUMN_NAME
+                ))
+                .send()
+                .await;
+
+            // If the conditional expression fails, we need to fetch
+            // the stored value (it's impossible to return the value from an error
+            // in DynamoDB) for Findex to retry with the correct `old_value`
+            match result {
+                Ok(_) => Ok(None),
+                Err(SdkError::ServiceError(err))
+                    if matches!(
+                        err.err(),
+                        PutItemError::ConditionalCheckFailedException { .. }
+                    ) =>
+                {
+                    let value = self.fetch_value(index, Table::Entries, &uid).await?;
+                    // rejected.insert(uid, value);
+
+                    Ok(Some((uid, value)))
+                }
+                Err(err) => {
+                    // dbg!(&err);
+                    Err(Error::from(err))
+                }
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -134,31 +247,35 @@ impl IndexesDatabase for Database {
             return Ok(uids_and_values);
         }
 
-        let mut keys_and_attributes = KeysAndAttributes::builder();
+        let uids: Vec<_> = uids.into_iter().collect();
 
-        for uid in uids.into_iter() {
-            keys_and_attributes = keys_and_attributes.keys(HashMap::from([(
-                ENTRIES_AND_CHAINS_ID_COLUMN_NAME.to_string(),
-                get_uid_attribute_value(index, &uid),
-            )]));
-        }
-        let batch_get_item = self
-            .client
-            .batch_get_item()
-            .request_items(self.get_table_name(table), keys_and_attributes.build());
+        for chunk in uids.chunks(DYNAMODB_MAX_READ_ELEMENTS) {
+            let mut keys_and_attributes = KeysAndAttributes::builder();
 
-        let results = batch_get_item.send().await?;
+            for uid in chunk {
+                keys_and_attributes = keys_and_attributes.keys(HashMap::from([(
+                    ENTRIES_AND_CHAINS_ID_COLUMN_NAME.to_string(),
+                    get_uid_attribute_value(index, &uid),
+                )]));
+            }
+            let batch_get_item = self
+                .client
+                .batch_get_item()
+                .request_items(self.get_table_name(table), keys_and_attributes.build());
 
-        if let Some(responses) = results.responses() {
-            if let Some(items) = responses.get(self.get_table_name(table)) {
-                for item in items {
-                    let id = extract_bytes(item, ENTRIES_AND_CHAINS_ID_COLUMN_NAME)?;
-                    let uid = extract_uid_from_stored_id(id)?;
+            let results = batch_get_item.send().await?;
 
-                    uids_and_values.insert(
-                        uid,
-                        extract_bytes(item, ENTRIES_AND_CHAINS_VALUE_COLUMN_NAME)?,
-                    );
+            if let Some(responses) = results.responses() {
+                if let Some(items) = responses.get(self.get_table_name(table)) {
+                    for item in items {
+                        let id = extract_bytes(item, ENTRIES_AND_CHAINS_ID_COLUMN_NAME)?;
+                        let uid = extract_uid_from_stored_id(id)?;
+
+                        uids_and_values.insert(
+                            uid,
+                            extract_bytes(item, ENTRIES_AND_CHAINS_VALUE_COLUMN_NAME)?,
+                        );
+                    }
                 }
             }
         }
@@ -175,106 +292,15 @@ impl IndexesDatabase for Database {
 
         // This function is using a loop instead of a batch_* function
         // because DynamoDB doesn't support conditional expression on batches.
-        // :ParallelizeUpsertEntries
-        let data: Vec<_> = data.into_iter().collect();
-        for (uid, (old_value, new_value)) in data {
-            if let Some(old_value) = old_value {
-                // If there is an `old_value`, we `update_item()` with a conditional
-                // expression checking the previously stored value against the `old_value`.
-                //
-                // The value should always exists inside the database (except in case of a compact).
-                // I don't know if `update_item()` fail with a specific error code if the key doesn't
-                // exists (it should fail since it's a `update_item()` and not a `put_item()`).
+        let mut jobs =
+            futures::stream::iter(data.into_iter().map(|(uid, (old_value, new_value))| {
+                self.upsert_entry(index, uid, old_value, new_value)
+            }))
+            .buffer_unordered(DYNAMODB_NUMBER_OF_PARALLEL_UPSERT_REQUEST);
 
-                let result = self
-                    .client
-                    .update_item()
-                    .table_name(self.get_table_name(Table::Entries))
-                    .key(
-                        ENTRIES_AND_CHAINS_ID_COLUMN_NAME,
-                        get_uid_attribute_value(index, &uid),
-                    )
-                    .update_expression(format!(
-                        "SET {} = :new",
-                        ENTRIES_AND_CHAINS_VALUE_COLUMN_NAME
-                    ))
-                    .expression_attribute_values(
-                        ":old",
-                        AttributeValue::B(Blob::new(old_value.clone())),
-                    )
-                    .expression_attribute_values(
-                        ":new",
-                        AttributeValue::B(Blob::new(new_value.clone())),
-                    )
-                    .condition_expression(format!(
-                        "{} = :old",
-                        ENTRIES_AND_CHAINS_VALUE_COLUMN_NAME
-                    ))
-                    .send()
-                    .await;
-
-                // If the conditional expression fails, we need to fetch
-                // the stored value (it's impossible to return the value from an error
-                // in DynamoDB) for Findex to retry with the correct `old_value`
-                match result {
-                    Ok(_) => {}
-                    Err(SdkError::ServiceError(err))
-                        if matches!(
-                            err.err(),
-                            UpdateItemError::ConditionalCheckFailedException { .. }
-                        ) =>
-                    {
-                        let value = self.fetch_value(index, Table::Entries, &uid).await?;
-                        rejected.insert(uid, value);
-                    }
-                    Err(err) => {
-                        dbg!(&err);
-                        return Err(Error::from(err));
-                    }
-                }
-            } else {
-                // Here we don't have an `old_value` so we can use `put_item()`
-                // with an `attribute_not_exists(id)` conditional expression to check
-                // that the key doesn't already exist.
-
-                let result = self
-                    .client
-                    .put_item()
-                    .table_name(self.get_table_name(Table::Entries))
-                    .item(
-                        ENTRIES_AND_CHAINS_ID_COLUMN_NAME,
-                        get_uid_attribute_value(index, &uid),
-                    )
-                    .item(
-                        ENTRIES_AND_CHAINS_VALUE_COLUMN_NAME,
-                        AttributeValue::B(Blob::new(new_value.clone())),
-                    )
-                    .condition_expression(format!(
-                        "attribute_not_exists({})",
-                        ENTRIES_AND_CHAINS_ID_COLUMN_NAME
-                    ))
-                    .send()
-                    .await;
-
-                // If the conditional expression fails, we need to fetch
-                // the stored value (it's impossible to return the value from an error
-                // in DynamoDB) for Findex to retry with the correct `old_value`
-                match result {
-                    Ok(_) => {}
-                    Err(SdkError::ServiceError(err))
-                        if matches!(
-                            err.err(),
-                            PutItemError::ConditionalCheckFailedException { .. }
-                        ) =>
-                    {
-                        let value = self.fetch_value(index, Table::Entries, &uid).await?;
-                        rejected.insert(uid, value);
-                    }
-                    Err(err) => {
-                        dbg!(&err);
-                        return Err(Error::from(err));
-                    }
-                }
+        while let Some(result) = jobs.next().await {
+            if let Some((uid, value)) = result? {
+                rejected.insert(uid, value);
             }
         }
 
@@ -288,7 +314,7 @@ impl IndexesDatabase for Database {
     ) -> Result<(), Error> {
         let data: Vec<_> = data.into_iter().collect();
 
-        for chunk in data.chunks(DYNAMODB_MAX_BATCH_ELEMENTS) {
+        for chunk in data.chunks(DYNAMODB_MAX_WRITE_ELEMENTS) {
             self.client
                 .batch_write_item()
                 .request_items(
