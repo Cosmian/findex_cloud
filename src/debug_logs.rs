@@ -65,7 +65,7 @@ pub(crate) async fn get_requests_log() -> String {
     format!("[{contents_with_commas}]")
 }
 
-#[get("/export_entries_for_index/{public_id}")]
+#[get("/export_entries_for_index/{id}")]
 pub(crate) async fn export_entries_for_index(
     index: Index,
     indexes: Data<dyn IndexesDatabase>,
@@ -73,7 +73,7 @@ pub(crate) async fn export_entries_for_index(
     indexes.fetch_all_as_json(&index, Table::Entries).await
 }
 
-#[get("/export_chains_for_index/{public_id}")]
+#[get("/export_chains_for_index/{id}")]
 pub(crate) async fn export_chains_for_index(
     index: Index,
     indexes: Data<dyn IndexesDatabase>,

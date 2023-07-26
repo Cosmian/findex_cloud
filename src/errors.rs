@@ -9,15 +9,8 @@ use actix_web::{
     web::Json,
     HttpResponse,
 };
-use actix_web_httpauth::{
-    extractors::AuthenticationError, headers::www_authenticate::bearer::Bearer,
-};
-#[cfg(feature = "multitenant")]
-use alcoholic_jwt::ValidationError;
 use cloudproof_findex::ser_de::SerializableSetError;
 use cosmian_findex::CoreError;
-#[cfg(feature = "multitenant")]
-use reqwest::header::InvalidHeaderValue;
 
 pub type Response<T> = Result<Json<T>, Error>;
 pub type ResponseBytes = Result<HttpResponse, Error>;
@@ -32,36 +25,6 @@ pub enum Error {
     WrongIndexPublicId,
     Findex(String),
 
-    #[cfg(feature = "multitenant")]
-    InvalidConfiguration,
-
-    #[cfg(feature = "multitenant")]
-    CannotFetchJwks(reqwest::Error),
-    #[cfg(feature = "multitenant")]
-    CannotFetchJwksResponse(reqwest::Error),
-
-    #[cfg(feature = "multitenant")]
-    JwksNoKid,
-    #[cfg(feature = "multitenant")]
-    JwksValidationError(ValidationError),
-    #[cfg(feature = "multitenant")]
-    TokenKidNotFoundInJwksKeysSet,
-    #[cfg(feature = "multitenant")]
-    MissingSubInJwtToken,
-    #[cfg(feature = "multitenant")]
-    InvalidSubInJwtToken,
-    #[cfg(feature = "multitenant")]
-    TokenExpired,
-
-    #[cfg(feature = "multitenant")]
-    FailToBuildBearerHeader(InvalidHeaderValue),
-    BearerError(Box<AuthenticationError<Bearer>>),
-
-    #[cfg(feature = "multitenant")]
-    UnknownProject(String),
-
-    #[cfg(feature = "multitenant")]
-    Reqwest(reqwest::Error),
     #[cfg(feature = "rocksdb")]
     Rocksdb(rocksdb::Error),
     #[cfg(feature = "heed")]
@@ -101,33 +64,6 @@ impl ResponseError for Error {
             Self::WrongIndexPublicId => StatusCode::BAD_REQUEST,
             Self::Findex(_) => StatusCode::BAD_REQUEST,
 
-            #[cfg(feature = "multitenant")]
-            Self::InvalidConfiguration => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(feature = "multitenant")]
-            Self::CannotFetchJwks(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(feature = "multitenant")]
-            Self::CannotFetchJwksResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(feature = "multitenant")]
-            Self::JwksNoKid => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(feature = "multitenant")]
-            Self::JwksValidationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(feature = "multitenant")]
-            Self::TokenKidNotFoundInJwksKeysSet => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(feature = "multitenant")]
-            Self::MissingSubInJwtToken => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(feature = "multitenant")]
-            Self::InvalidSubInJwtToken => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(feature = "multitenant")]
-            Self::TokenExpired => StatusCode::FORBIDDEN,
-
-            #[cfg(feature = "multitenant")]
-            Self::FailToBuildBearerHeader(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::BearerError(_) => StatusCode::FORBIDDEN,
-
-            #[cfg(feature = "multitenant")]
-            Self::UnknownProject(_) => StatusCode::NOT_FOUND,
-            #[cfg(feature = "multitenant")]
-            Self::Reqwest(_) => StatusCode::INTERNAL_SERVER_ERROR,
             #[cfg(feature = "rocksdb")]
             Self::Rocksdb(_) => StatusCode::INTERNAL_SERVER_ERROR,
             #[cfg(feature = "heed")]
@@ -187,25 +123,5 @@ impl From<CoreError> for Error {
 impl From<SerializableSetError> for Error {
     fn from(err: SerializableSetError) -> Self {
         Error::Findex(err.to_string())
-    }
-}
-
-#[cfg(feature = "multitenant")]
-impl From<reqwest::Error> for Error {
-    fn from(err: reqwest::Error) -> Self {
-        Error::Reqwest(err)
-    }
-}
-
-#[cfg(feature = "multitenant")]
-impl From<InvalidHeaderValue> for Error {
-    fn from(err: InvalidHeaderValue) -> Self {
-        Error::FailToBuildBearerHeader(err)
-    }
-}
-
-impl From<AuthenticationError<Bearer>> for Error {
-    fn from(err: AuthenticationError<Bearer>) -> Self {
-        Error::BearerError(Box::new(err))
     }
 }

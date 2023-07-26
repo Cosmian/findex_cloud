@@ -37,7 +37,7 @@ impl Database {
 
 #[async_trait]
 impl MetadataDatabase for Database {
-    async fn get_indexes(&self, project_uuid: &str) -> Result<Vec<Index>, Error> {
+    async fn get_indexes(&self) -> Result<Vec<Index>, Error> {
         let mut db = self.0.acquire().await?;
 
         Ok(sqlx::query_as!(
@@ -47,15 +47,13 @@ impl MetadataDatabase for Database {
                 *,
                 null as "size: _"
             FROM indexes
-            WHERE project_uuid = $1 AND deleted_at IS NULL
             ORDER BY created_at DESC"#,
-            project_uuid,
         )
         .fetch_all(&mut db)
         .await?)
     }
 
-    async fn get_index(&self, public_id: &str) -> Result<Option<Index>, Error> {
+    async fn get_index(&self, id: &str) -> Result<Option<Index>, Error> {
         let mut db = self.0.acquire().await?;
 
         let index = sqlx::query_as!(
@@ -65,9 +63,9 @@ impl MetadataDatabase for Database {
                     *,
                     null as "size: _"
                 FROM indexes
-                WHERE public_id = $1 AND deleted_at IS NULL
+                WHERE id = $1
             "#,
-            public_id,
+            id,
         )
         .fetch_optional(&mut db)
         .await?;
@@ -75,20 +73,12 @@ impl MetadataDatabase for Database {
         Ok(index)
     }
 
-    async fn delete_index(&self, public_id: &str) -> Result<(), Error> {
+    async fn delete_index(&self, id: &str) -> Result<(), Error> {
         let mut db = self.0.acquire().await?;
 
-        sqlx::query_as!(
-            Index,
-            r#"
-                UPDATE indexes
-                SET deleted_at = current_timestamp
-                WHERE public_id = $1
-            "#,
-            public_id,
-        )
-        .execute(&mut db)
-        .await?;
+        sqlx::query_as!(Index, r#"DELETE FROM indexes WHERE id = $1"#, id,)
+            .execute(&mut db)
+            .await?;
 
         Ok(())
     }
@@ -99,10 +89,7 @@ impl MetadataDatabase for Database {
         let Id { id } = sqlx::query_as!(
             Id,
             r#"INSERT INTO indexes (
-                public_id,
-    
-                authz_id,
-                project_uuid,
+                id,
     
                 name,
     
@@ -110,10 +97,8 @@ impl MetadataDatabase for Database {
                 fetch_chains_key,
                 upsert_entries_key,
                 insert_chains_key
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id"#,
-            new_index.public_id,
-            new_index.authz_id,
-            new_index.project_uuid,
+            ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"#,
+            new_index.id,
             new_index.name,
             new_index.fetch_entries_key,
             new_index.fetch_chains_key,
@@ -134,5 +119,6 @@ impl MetadataDatabase for Database {
 }
 
 struct Id {
-    id: i64,
+    // The column is mark as `NOT NULL` but SQLx seems to not understand it.
+    id: Option<String>,
 }

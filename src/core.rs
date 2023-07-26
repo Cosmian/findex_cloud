@@ -1,6 +1,3 @@
-#[cfg(feature = "multitenant")]
-use std::env;
-
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
@@ -26,18 +23,12 @@ use cosmian_findex::{
 };
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "multitenant")]
-use crate::auth0::Auth;
-
 use crate::errors::Error;
 
 #[derive(Serialize, Debug, Clone)]
 pub(crate) struct Index {
     #[serde(skip_serializing)]
-    pub(crate) id: i64,
-    pub(crate) public_id: String,
-    pub(crate) authz_id: String,
-    pub(crate) project_uuid: String,
+    pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) fetch_entries_key: Vec<u8>,
     pub(crate) fetch_chains_key: Vec<u8>,
@@ -45,16 +36,11 @@ pub(crate) struct Index {
     pub(crate) insert_chains_key: Vec<u8>,
     pub(crate) size: Option<i64>,
     pub(crate) created_at: NaiveDateTime,
-    #[serde(skip_serializing)]
-    #[allow(dead_code)]
-    pub(crate) deleted_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug)]
 pub(crate) struct NewIndex {
-    pub(crate) public_id: String,
-    pub(crate) authz_id: String,
-    pub(crate) project_uuid: String,
+    pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) fetch_entries_key: Vec<u8>,
     pub(crate) fetch_chains_key: Vec<u8>,
@@ -166,25 +152,25 @@ pub(crate) type MetadataCache = RwLock<HashMap<String, Index>>;
 
 #[async_trait]
 pub(crate) trait MetadataDatabase: Sync + Send {
-    async fn get_indexes(&self, project_uuid: &str) -> Result<Vec<Index>, Error>;
+    async fn get_indexes(&self) -> Result<Vec<Index>, Error>;
 
-    async fn get_index(&self, public_id: &str) -> Result<Option<Index>, Error>;
+    async fn get_index(&self, id: &str) -> Result<Option<Index>, Error>;
     async fn get_index_with_cache(
         &self,
         cache: &MetadataCache,
-        public_id: &str,
+        id: &str,
     ) -> Result<Option<Index>, Error> {
         if let Ok(cache) = cache.read() {
-            if let Some(index) = cache.get(public_id) {
+            if let Some(index) = cache.get(id) {
                 return Ok(Some(index.clone()));
             }
         }
 
-        let index = self.get_index(public_id).await?;
+        let index = self.get_index(id).await?;
 
         if let Some(index) = index {
             if let Ok(mut cache) = cache.write() {
-                cache.insert(public_id.to_string(), index.clone());
+                cache.insert(id.to_string(), index.clone());
             }
 
             return Ok(Some(index));
@@ -193,7 +179,7 @@ pub(crate) trait MetadataDatabase: Sync + Send {
         return Ok(None);
     }
 
-    async fn delete_index(&self, public_id: &str) -> Result<(), Error>;
+    async fn delete_index(&self, id: &str) -> Result<(), Error>;
     async fn create_index(&self, new_index: NewIndex) -> Result<Index, Error>;
 }
 
@@ -208,57 +194,19 @@ impl FromRequest for Index {
             let metadata_cache = req.app_data::<Data<MetadataCache>>().unwrap();
             let metadata_database = req.app_data::<Data<dyn MetadataDatabase>>().unwrap();
 
-            let public_id: Path<String> = Path::<String>::extract(&req)
+            let id: Path<String> = Path::<String>::extract(&req)
                 .await
                 .map_err(|_| Error::WrongIndexPublicId)?;
 
             let index = metadata_database
-                .get_index_with_cache(metadata_cache, &public_id)
+                .get_index_with_cache(metadata_cache, &id)
                 .await?;
 
             if let Some(index) = index {
                 Ok(index)
             } else {
-                Err(Error::BadRequest(format!(
-                    "Unknown index for ID {public_id}"
-                )))
+                Err(Error::BadRequest(format!("Unknown index for ID {id}")))
             }
         })
-    }
-}
-
-#[cfg(feature = "multitenant")]
-pub(crate) struct Backend {
-    pub(crate) domain: String,
-}
-
-#[cfg(feature = "multitenant")]
-impl Backend {
-    pub(crate) fn from_env() -> Self {
-        Self {
-            domain: env::var("BACKEND_DOMAIN").expect(
-                "Please set the `BACKEND_DOMAIN` environment variable. Example: \
-                \"backend.mse.cosmian.com\"",
-            ),
-        }
-    }
-}
-
-#[cfg(feature = "multitenant")]
-#[derive(Debug, Deserialize, PartialEq)]
-pub(crate) struct BackendProject {
-    pub(crate) id: String,
-}
-
-#[cfg(feature = "multitenant")]
-impl BackendProject {
-    pub(crate) async fn get_projects(backend: &Backend, auth: &Auth) -> Result<Vec<Self>, Error> {
-        Ok(reqwest::Client::new()
-            .get(&format!("https://{}/projects", backend.domain))
-            .bearer_auth(&auth.bearer)
-            .send()
-            .await?
-            .json()
-            .await?)
     }
 }
