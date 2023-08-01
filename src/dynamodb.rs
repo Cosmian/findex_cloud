@@ -6,9 +6,16 @@ use std::{
 use async_trait::async_trait;
 use aws_config::{environment::EnvironmentVariableCredentialsProvider, retry::RetryConfigBuilder};
 use aws_sdk_dynamodb::{
-    operation::{put_item::PutItemError, update_item::UpdateItemError},
+    operation::{
+        create_table::{CreateTableError, CreateTableOutput},
+        put_item::PutItemError,
+        update_item::UpdateItemError,
+    },
     primitives::Blob,
-    types::{AttributeValue, KeysAndAttributes, PutRequest, WriteRequest},
+    types::{
+        AttributeDefinition, AttributeValue, BillingMode, KeySchemaElement, KeyType,
+        KeysAndAttributes, PutRequest, ScalarAttributeType, WriteRequest,
+    },
     Client,
 };
 use aws_smithy_http::result::SdkError;
@@ -80,6 +87,77 @@ impl Database {
             .unwrap_or_else(|_| "findex_cloud_entries".to_string());
         let chains_table_name = env::var("DYNAMODB_CHAINS_TABLE_NAME")
             .unwrap_or_else(|_| "findex_cloud_chains".to_string());
+
+        try_create_table(
+            client
+                .create_table()
+                .table_name(&metadata_table_name)
+                .attribute_definitions(
+                    AttributeDefinition::builder()
+                        .attribute_name("id")
+                        .attribute_type(ScalarAttributeType::S)
+                        .build(),
+                )
+                .key_schema(
+                    KeySchemaElement::builder()
+                        .attribute_name("id")
+                        .key_type(KeyType::Hash)
+                        .build(),
+                )
+                .billing_mode(BillingMode::PayPerRequest)
+                .send()
+                .await,
+        )
+        .unwrap_or_else(|err| {
+            panic!("Fail to create table {metadata_table_name} in DynamoDB ({err})")
+        });
+
+        try_create_table(
+            client
+                .create_table()
+                .table_name(&entries_table_name)
+                .attribute_definitions(
+                    AttributeDefinition::builder()
+                        .attribute_name(ENTRIES_AND_CHAINS_ID_COLUMN_NAME)
+                        .attribute_type(ScalarAttributeType::B)
+                        .build(),
+                )
+                .key_schema(
+                    KeySchemaElement::builder()
+                        .attribute_name(ENTRIES_AND_CHAINS_ID_COLUMN_NAME)
+                        .key_type(KeyType::Hash)
+                        .build(),
+                )
+                .billing_mode(BillingMode::PayPerRequest)
+                .send()
+                .await,
+        )
+        .unwrap_or_else(|err| {
+            panic!("Fail to create table {entries_table_name} in DynamoDB ({err})")
+        });
+        try_create_table(
+            client
+                .create_table()
+                .table_name(&chains_table_name)
+                .attribute_definitions(
+                    AttributeDefinition::builder()
+                        .attribute_name(ENTRIES_AND_CHAINS_ID_COLUMN_NAME)
+                        .attribute_type(ScalarAttributeType::B)
+                        .build(),
+                )
+                .key_schema(
+                    KeySchemaElement::builder()
+                        .attribute_name(ENTRIES_AND_CHAINS_ID_COLUMN_NAME)
+                        .key_type(KeyType::Hash)
+                        .build(),
+                )
+                .billing_mode(BillingMode::PayPerRequest)
+                .send()
+                .await,
+        )
+        .unwrap_or_else(|err| {
+            panic!("Fail to create table {chains_table_name} in DynamoDB ({err})")
+        });
 
         Database {
             client,
@@ -354,7 +432,17 @@ impl IndexesDatabase for Database {
 #[async_trait]
 impl MetadataDatabase for Database {
     async fn get_indexes(&self) -> Result<Vec<Index>, Error> {
-        Ok(vec![])
+        let response = self
+            .client
+            .scan()
+            .table_name(&self.metadata_table_name)
+            .send()
+            .await?;
+
+        match response.items() {
+            None => Ok(vec![]), // Don't know why this function return an option
+            Some(items) => Ok(items.into_iter().map(item_to_index).flatten().collect()),
+        }
     }
 
     async fn get_index(&self, id: &str) -> Result<Option<Index>, Error> {
@@ -366,30 +454,10 @@ impl MetadataDatabase for Database {
             .send()
             .await?;
 
-        let index = match item.item() {
-            None => return Ok(None),
-            Some(item) => {
-                let created_at = extract_string(item, "created_at")?;
-
-                Index {
-                    id: extract_string(item, "id")?,
-                    name: extract_string(item, "name")?,
-                    fetch_entries_key: extract_bytes(item, "fetch_entries_key")?,
-                    fetch_chains_key: extract_bytes(item, "fetch_chains_key")?,
-                    upsert_entries_key: extract_bytes(item, "upsert_entries_key")?,
-                    insert_chains_key: extract_bytes(item, "insert_chains_key")?,
-                    size: None,
-                    created_at: NaiveDateTime::parse_from_str(&created_at, "%Y-%m-%d %H:%M:%S%.f")
-                        .map_err(|_| {
-                            Error::DynamoDb(format!(
-                                "Cannot parse date '{created_at}' inside 'created_at' attribute."
-                            ))
-                        })?,
-                }
-            }
-        };
-
-        Ok(Some(index))
+        match item.item() {
+            None => Ok(None),
+            Some(item) => Ok(Some(item_to_index(item)?)),
+        }
     }
 
     async fn delete_index(&self, id: &str) -> Result<(), Error> {
@@ -500,4 +568,39 @@ fn extract_string(item: &HashMap<String, AttributeValue>, key: &str) -> Result<S
             ))
         })?
         .clone())
+}
+
+fn try_create_table(
+    response: Result<CreateTableOutput, SdkError<CreateTableError>>,
+) -> Result<(), SdkError<CreateTableError>> {
+    match response {
+        Ok(_) => Ok(()),
+        Err(SdkError::ServiceError(err))
+            if matches!(err.err(), CreateTableError::ResourceInUseException(_)) =>
+        {
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn item_to_index(item: &HashMap<String, AttributeValue>) -> Result<Index, Error> {
+    let created_at = extract_string(item, "created_at")?;
+
+    Ok(Index {
+        id: extract_string(item, "id")?,
+        name: extract_string(item, "name")?,
+        fetch_entries_key: extract_bytes(item, "fetch_entries_key")?,
+        fetch_chains_key: extract_bytes(item, "fetch_chains_key")?,
+        upsert_entries_key: extract_bytes(item, "upsert_entries_key")?,
+        insert_chains_key: extract_bytes(item, "insert_chains_key")?,
+        size: None,
+        created_at: NaiveDateTime::parse_from_str(&created_at, "%Y-%m-%d %H:%M:%S%.f").map_err(
+            |_| {
+                Error::DynamoDb(format!(
+                    "Cannot parse date '{created_at}' inside 'created_at' attribute."
+                ))
+            },
+        )?,
+    })
 }

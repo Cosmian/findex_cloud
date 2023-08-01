@@ -79,34 +79,41 @@
             let indexes = await response.json()
 
             return indexes.map((index) => {
-                return { id: index.public_id, name: index.name, size: index.size, created_at: index.created_at }
+                return { id: index.id, name: index.name, size: index.size, created_at: index.created_at }
             })
         }
 
         const addLineIndex = (item) => {
-            const div = document.createElement('button');
+            const line = document.createElement('button');
+            line.setAttribute("id", item.id);
+            line.classList.add("row");
 
-            Object.keys(item).forEach((key) => {
-                if (key === "id") {
-                    div.setAttribute("id", item[key])
-                } else {
-                    const inner_div = document.createElement('div');
-                    const parsedDate = Date.parse(item[key])
-                    const value = isNaN(item[key]) && !isNaN(parsedDate) ? new Date(item[key]).toLocaleString() : item[key]
-                    const text = document.createTextNode(value);
-                    inner_div.classList.add("cell");
-                    inner_div.appendChild(text);
-                    div.appendChild(inner_div);
-                }
-            })
-            div.classList.add("row");
-            document.getElementById("list").appendChild(div);
+            {
+                const cell = document.createElement('div');
+                cell.classList.add("cell");
+                cell.textContent = item.name;
+                line.appendChild(cell);
+            }
+
+            {
+                const cell = document.createElement('div');
+                cell.classList.add("cell");
+                cell.textContent = item.size ? `${item.size} bytes` : 'N/A';
+                line.appendChild(cell);
+            }
+
+            {
+                const cell = document.createElement('div');
+                cell.classList.add("cell");
+                cell.textContent = new Date(item.created_at).toLocaleString();
+                line.appendChild(cell);
+            }
+
+            document.getElementById("list").appendChild(line);
         }
 
         indexes = await fetchIndexes();
-        indexes.forEach(function (item) {
-            addLineIndex(item);
-        });
+        indexes.forEach(addLineIndex);
 
         document.getElementById('new_index').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -122,10 +129,10 @@
             })
 
             let index = await response.json();
-            const item = { id: index.public_id, name: index.name, size: 0, created_at: index.created_at }
+            const item = { id: index.id, name: index.name, size: null, created_at: index.created_at }
 
             const token = generateNewToken(
-                index.public_id,
+                index.id,
                 Uint8Array.from(index.fetch_entries_key),
                 Uint8Array.from(index.fetch_chains_key),
                 Uint8Array.from(index.upsert_entries_key),
@@ -164,7 +171,7 @@
                     indexSize = currentRow.childNodes[1].textContent;
                     document.getElementById("details").style.display = "block";
                     document.getElementById('nameIndex').textContent = indexName;
-                    document.getElementById('size').textContent = `Size: ${indexSize} bytes`;
+                    document.getElementById('size').textContent = `Size: ${indexSize}`;
                     document.getElementById('id').textContent = `Index ID: ${indexId}`;
                 }
             });

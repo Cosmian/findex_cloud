@@ -27,7 +27,6 @@ use crate::errors::Error;
 
 #[derive(Serialize, Debug, Clone)]
 pub(crate) struct Index {
-    #[serde(skip_serializing)]
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) fetch_entries_key: Vec<u8>,
