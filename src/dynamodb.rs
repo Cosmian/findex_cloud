@@ -441,7 +441,10 @@ impl MetadataDatabase for Database {
 
         match response.items() {
             None => Ok(vec![]), // Don't know why this function return an option
-            Some(items) => Ok(items.into_iter().map(item_to_index).flatten().collect()),
+            Some(items) => Ok(items
+                .iter()
+                .map(item_to_index)
+                .collect::<Result<Vec<_>, _>>()?),
         }
     }
 
