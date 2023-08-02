@@ -250,13 +250,9 @@ impl Database {
                     ) =>
                 {
                     let value = self.fetch_value(index, Table::Entries, &uid).await?;
-                    // rejected.insert(uid, value);
                     Ok(Some((uid, value)))
                 }
-                Err(err) => {
-                    // dbg!(&err);
-                    Err(Error::from(err))
-                }
+                Err(err) => Err(Error::from(err)),
             }
         } else {
             // Here we don't have an `old_value` so we can use `put_item()`
@@ -294,14 +290,10 @@ impl Database {
                     ) =>
                 {
                     let value = self.fetch_value(index, Table::Entries, &uid).await?;
-                    // rejected.insert(uid, value);
 
                     Ok(Some((uid, value)))
                 }
-                Err(err) => {
-                    // dbg!(&err);
-                    Err(Error::from(err))
-                }
+                Err(err) => Err(Error::from(err)),
             }
         }
     }
@@ -425,7 +417,7 @@ impl IndexesDatabase for Database {
 
     #[cfg(feature = "log_requests")]
     async fn fetch_all_as_json(&self, _index: &Index, _table: Table) -> Result<String, Error> {
-        todo!();
+        unimplemented!();
     }
 }
 
