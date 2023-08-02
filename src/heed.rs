@@ -160,7 +160,7 @@ fn table_to_prefix(table: Table) -> Prefix {
 
 fn key(index: &Index, table: Table, uid: &Uid<UID_LENGTH>) -> Vec<u8> {
     [
-        &index.id.to_be_bytes(),
+        (index.id.as_bytes()),
         &[table_to_prefix(table) as u8][..],
         uid.as_ref(),
     ]
@@ -168,5 +168,5 @@ fn key(index: &Index, table: Table, uid: &Uid<UID_LENGTH>) -> Vec<u8> {
 }
 
 fn size_key(index: &Index) -> Vec<u8> {
-    [&index.id.to_be_bytes(), &[Prefix::Size as u8][..]].concat()
+    [(index.id.as_bytes()), &[Prefix::Size as u8][..]].concat()
 }

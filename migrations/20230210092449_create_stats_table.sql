@@ -1,6 +1,6 @@
 CREATE TABLE stats (
     id INTEGER PRIMARY KEY NOT NULL,
-    index_id INTEGER NOT NULL,
+    index_id VARCHAR NOT NULL,
     chains_size INTEGER NOT NULL DEFAULT(0),
     entries_size INTEGER NOT NULL DEFAULT(0),
     created_at DATETIME NOT NULL DEFAULT(current_timestamp),

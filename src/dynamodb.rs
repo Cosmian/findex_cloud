@@ -6,9 +6,16 @@ use std::{
 use async_trait::async_trait;
 use aws_config::{environment::EnvironmentVariableCredentialsProvider, retry::RetryConfigBuilder};
 use aws_sdk_dynamodb::{
-    operation::{put_item::PutItemError, update_item::UpdateItemError},
+    operation::{
+        create_table::{CreateTableError, CreateTableOutput},
+        put_item::PutItemError,
+        update_item::UpdateItemError,
+    },
     primitives::Blob,
-    types::{AttributeValue, KeysAndAttributes, PutRequest, WriteRequest},
+    types::{
+        AttributeDefinition, AttributeValue, BillingMode, KeySchemaElement, KeyType,
+        KeysAndAttributes, PutRequest, ScalarAttributeType, WriteRequest,
+    },
     Client,
 };
 use aws_smithy_http::result::SdkError;
@@ -26,11 +33,11 @@ use crate::{
 /// Use 3 tables, one for the metadata (indexes names, keys), one for the entries
 /// and one for the chains.
 ///
-/// Entries and chains IDs are composed of the index `public_id` as bytes concat with
+/// Entries and chains IDs are composed of the index `id` as bytes concat with
 /// the UID. Maybe we could split that and use a composed index in DynamoDB? Having
 /// a composed index may be useful to compute the size of one index.
 ///
-/// Metadata are indexed by `public_id` since it's the value we got on most of the endpoints.
+/// Metadata are indexed by `id` since it's the value we got on most of the endpoints.
 /// The `id` column seems useless, maybe we should removed it from all the implementations?
 ///
 /// Right now, the user is expected to have the correct tables inside it's DynamoDB instance.
@@ -39,11 +46,10 @@ use crate::{
 ///
 /// TODO
 /// - Documentation on table creation
-/// - `get_indexes()` (should add `project_uuid` as a index to get all the values matching)
 /// - Try to remove clones everywhere
-/// - Split ID in two columns (index_public_id and uid) in entries and chains?
+/// - Split ID in two columns (index_id and uid) in entries and chains?
 /// - Implement sizes (right now this implementation do not know the sizes of the tables for one index)
-/// - In the rare case of collusion for a `public_id` retry with a new one? :UniquePublicId
+/// - In the rare case of collusion for a `id` retry with a new one? :UniqueId
 pub struct Database {
     client: Client,
 
@@ -81,6 +87,77 @@ impl Database {
             .unwrap_or_else(|_| "findex_cloud_entries".to_string());
         let chains_table_name = env::var("DYNAMODB_CHAINS_TABLE_NAME")
             .unwrap_or_else(|_| "findex_cloud_chains".to_string());
+
+        try_create_table(
+            client
+                .create_table()
+                .table_name(&metadata_table_name)
+                .attribute_definitions(
+                    AttributeDefinition::builder()
+                        .attribute_name("id")
+                        .attribute_type(ScalarAttributeType::S)
+                        .build(),
+                )
+                .key_schema(
+                    KeySchemaElement::builder()
+                        .attribute_name("id")
+                        .key_type(KeyType::Hash)
+                        .build(),
+                )
+                .billing_mode(BillingMode::PayPerRequest)
+                .send()
+                .await,
+        )
+        .unwrap_or_else(|err| {
+            panic!("Fail to create table {metadata_table_name} in DynamoDB ({err})")
+        });
+
+        try_create_table(
+            client
+                .create_table()
+                .table_name(&entries_table_name)
+                .attribute_definitions(
+                    AttributeDefinition::builder()
+                        .attribute_name(ENTRIES_AND_CHAINS_ID_COLUMN_NAME)
+                        .attribute_type(ScalarAttributeType::B)
+                        .build(),
+                )
+                .key_schema(
+                    KeySchemaElement::builder()
+                        .attribute_name(ENTRIES_AND_CHAINS_ID_COLUMN_NAME)
+                        .key_type(KeyType::Hash)
+                        .build(),
+                )
+                .billing_mode(BillingMode::PayPerRequest)
+                .send()
+                .await,
+        )
+        .unwrap_or_else(|err| {
+            panic!("Fail to create table {entries_table_name} in DynamoDB ({err})")
+        });
+        try_create_table(
+            client
+                .create_table()
+                .table_name(&chains_table_name)
+                .attribute_definitions(
+                    AttributeDefinition::builder()
+                        .attribute_name(ENTRIES_AND_CHAINS_ID_COLUMN_NAME)
+                        .attribute_type(ScalarAttributeType::B)
+                        .build(),
+                )
+                .key_schema(
+                    KeySchemaElement::builder()
+                        .attribute_name(ENTRIES_AND_CHAINS_ID_COLUMN_NAME)
+                        .key_type(KeyType::Hash)
+                        .build(),
+                )
+                .billing_mode(BillingMode::PayPerRequest)
+                .send()
+                .await,
+        )
+        .unwrap_or_else(|err| {
+            panic!("Fail to create table {chains_table_name} in DynamoDB ({err})")
+        });
 
         Database {
             client,
@@ -173,13 +250,9 @@ impl Database {
                     ) =>
                 {
                     let value = self.fetch_value(index, Table::Entries, &uid).await?;
-                    // rejected.insert(uid, value);
                     Ok(Some((uid, value)))
                 }
-                Err(err) => {
-                    // dbg!(&err);
-                    Err(Error::from(err))
-                }
+                Err(err) => Err(Error::from(err)),
             }
         } else {
             // Here we don't have an `old_value` so we can use `put_item()`
@@ -217,14 +290,10 @@ impl Database {
                     ) =>
                 {
                     let value = self.fetch_value(index, Table::Entries, &uid).await?;
-                    // rejected.insert(uid, value);
 
                     Ok(Some((uid, value)))
                 }
-                Err(err) => {
-                    // dbg!(&err);
-                    Err(Error::from(err))
-                }
+                Err(err) => Err(Error::from(err)),
             }
         }
     }
@@ -255,7 +324,7 @@ impl IndexesDatabase for Database {
             for uid in chunk {
                 keys_and_attributes = keys_and_attributes.keys(HashMap::from([(
                     ENTRIES_AND_CHAINS_ID_COLUMN_NAME.to_string(),
-                    get_uid_attribute_value(index, &uid),
+                    get_uid_attribute_value(index, uid),
                 )]));
             }
             let batch_get_item = self
@@ -348,59 +417,48 @@ impl IndexesDatabase for Database {
 
     #[cfg(feature = "log_requests")]
     async fn fetch_all_as_json(&self, _index: &Index, _table: Table) -> Result<String, Error> {
-        todo!();
+        unimplemented!();
     }
 }
 
 #[async_trait]
 impl MetadataDatabase for Database {
-    async fn get_indexes(&self, _project_uuid: &str) -> Result<Vec<Index>, Error> {
-        Ok(vec![])
+    async fn get_indexes(&self) -> Result<Vec<Index>, Error> {
+        let response = self
+            .client
+            .scan()
+            .table_name(&self.metadata_table_name)
+            .send()
+            .await?;
+
+        match response.items() {
+            None => Ok(vec![]), // Don't know why this function return an option
+            Some(items) => Ok(items
+                .iter()
+                .map(item_to_index)
+                .collect::<Result<Vec<_>, _>>()?),
+        }
     }
 
-    async fn get_index(&self, public_id: &str) -> Result<Option<Index>, Error> {
+    async fn get_index(&self, id: &str) -> Result<Option<Index>, Error> {
         let item = self
             .client
             .get_item()
             .table_name(&self.metadata_table_name)
-            .key("public_id", AttributeValue::S(public_id.to_string()))
+            .key("id", AttributeValue::S(id.to_string()))
             .send()
             .await?;
 
-        let index = match item.item() {
-            None => return Ok(None),
-            Some(item) => {
-                let created_at = extract_string(item, "created_at")?;
-
-                Index {
-                    id: extract_number(item, "id")?,
-                    public_id: extract_string(item, "public_id")?,
-                    authz_id: extract_string(item, "authz_id")?,
-                    project_uuid: extract_string(item, "project_uuid")?,
-                    name: extract_string(item, "name")?,
-                    fetch_entries_key: extract_bytes(item, "fetch_entries_key")?,
-                    fetch_chains_key: extract_bytes(item, "fetch_chains_key")?,
-                    upsert_entries_key: extract_bytes(item, "upsert_entries_key")?,
-                    insert_chains_key: extract_bytes(item, "insert_chains_key")?,
-                    size: None,
-                    created_at: NaiveDateTime::parse_from_str(&created_at, "%Y-%m-%d %H:%M:%S%.f")
-                        .map_err(|_| {
-                            Error::DynamoDb(format!(
-                                "Cannot parse date '{created_at}' inside 'created_at' attribute."
-                            ))
-                        })?,
-                    deleted_at: None,
-                }
-            }
-        };
-
-        Ok(Some(index))
+        match item.item() {
+            None => Ok(None),
+            Some(item) => Ok(Some(item_to_index(item)?)),
+        }
     }
 
-    async fn delete_index(&self, public_id: &str) -> Result<(), Error> {
+    async fn delete_index(&self, id: &str) -> Result<(), Error> {
         self.client
             .delete_item()
-            .key("public_id", AttributeValue::S(public_id.to_string()))
+            .key("id", AttributeValue::S(id.to_string()))
             .send()
             .await?;
 
@@ -409,10 +467,7 @@ impl MetadataDatabase for Database {
 
     async fn create_index(&self, new_index: NewIndex) -> Result<Index, Error> {
         let index = Index {
-            id: 42,
-            public_id: new_index.public_id,
-            authz_id: new_index.authz_id,
-            project_uuid: new_index.project_uuid,
+            id: new_index.id,
             name: new_index.name,
             fetch_entries_key: new_index.fetch_entries_key,
             fetch_chains_key: new_index.fetch_chains_key,
@@ -420,21 +475,14 @@ impl MetadataDatabase for Database {
             insert_chains_key: new_index.insert_chains_key,
             size: Some(0),
             created_at: Utc::now().naive_utc(),
-            deleted_at: None,
         };
 
-        // This will override the previous index if the `public_id` is not unique
-        // :UniquePublicId
+        // This will override the previous index if the `id` is not unique
+        // :UniqueId
         self.client
             .put_item()
             .table_name(&self.metadata_table_name)
-            .item("id", AttributeValue::N(index.id.to_string()))
-            .item("public_id", AttributeValue::S(index.public_id.clone()))
-            .item("authz_id", AttributeValue::S(index.authz_id.clone()))
-            .item(
-                "project_uuid",
-                AttributeValue::S(index.project_uuid.clone()),
-            )
+            .item("id", AttributeValue::S(index.id.clone()))
             .item("name", AttributeValue::S(index.name.clone()))
             .item(
                 "fetch_entries_key",
@@ -463,13 +511,13 @@ impl MetadataDatabase for Database {
     }
 }
 
-/// Create the ID to store inside DynamoDB from Index `public_id` and `uid`
+/// Create the ID to store inside DynamoDB from Index `id` and `uid`
 /// This function is the inverse of `extract_uid_from_stored_id`.
 fn get_uid_attribute_value(index: &Index, uid: &[u8]) -> AttributeValue {
-    let public_id_bytes = index.public_id.as_bytes();
+    let index_id_bytes = index.id.as_bytes();
 
-    let mut id = Vec::with_capacity(public_id_bytes.len() + uid.len());
-    id.extend_from_slice(public_id_bytes);
+    let mut id = Vec::with_capacity(index_id_bytes.len() + uid.len());
+    id.extend_from_slice(index_id_bytes);
     id.extend_from_slice(uid);
 
     AttributeValue::B(Blob::new(id))
@@ -517,19 +565,37 @@ fn extract_string(item: &HashMap<String, AttributeValue>, key: &str) -> Result<S
         .clone())
 }
 
-fn extract_number(item: &HashMap<String, AttributeValue>, key: &str) -> Result<i64, Error> {
-    item.get(key)
-        .ok_or_else(|| Error::DynamoDb(format!("{item:?} doesn't contains an '{key}' attribute.")))?
-        .as_n()
-        .map_err(|_| {
-            Error::DynamoDb(format!(
-                "{item:?} contains a '{key}' attribute but it's not a 'number'."
-            ))
-        })?
-        .parse()
-        .map_err(|_| {
-            Error::DynamoDb(format!(
-                "{item:?} contains a '{key}' attribute but cannot parse it as a 'number'."
-            ))
-        })
+fn try_create_table(
+    response: Result<CreateTableOutput, SdkError<CreateTableError>>,
+) -> Result<(), SdkError<CreateTableError>> {
+    match response {
+        Ok(_) => Ok(()),
+        Err(SdkError::ServiceError(err))
+            if matches!(err.err(), CreateTableError::ResourceInUseException(_)) =>
+        {
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn item_to_index(item: &HashMap<String, AttributeValue>) -> Result<Index, Error> {
+    let created_at = extract_string(item, "created_at")?;
+
+    Ok(Index {
+        id: extract_string(item, "id")?,
+        name: extract_string(item, "name")?,
+        fetch_entries_key: extract_bytes(item, "fetch_entries_key")?,
+        fetch_chains_key: extract_bytes(item, "fetch_chains_key")?,
+        upsert_entries_key: extract_bytes(item, "upsert_entries_key")?,
+        insert_chains_key: extract_bytes(item, "insert_chains_key")?,
+        size: None,
+        created_at: NaiveDateTime::parse_from_str(&created_at, "%Y-%m-%d %H:%M:%S%.f").map_err(
+            |_| {
+                Error::DynamoDb(format!(
+                    "Cannot parse date '{created_at}' inside 'created_at' attribute."
+                ))
+            },
+        )?,
+    })
 }

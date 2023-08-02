@@ -7,15 +7,9 @@ use crate::debug_logs::DataTimeDiffInMillisecondsMutex;
 use std::env;
 use std::sync::Arc;
 
-#[cfg(feature = "multitenant")]
-use crate::auth0::{Auth, Auth0};
-#[cfg(feature = "multitenant")]
-use crate::core::{Backend, BackendProject};
 use crate::core::{IndexesDatabase, MetadataDatabase, NewIndex, Table};
 use crate::errors::Error;
 use actix_web::web::PayloadConfig;
-#[cfg(feature = "multitenant")]
-use actix_web::web::Query;
 
 use crate::{
     core::{check_body_signature, Index, MetadataCache},
@@ -39,8 +33,6 @@ use rand::{distributions::Alphanumeric, Rng, RngCore, SeedableRng};
 use serde::Deserialize;
 use std::path::Path as FsPath;
 
-#[cfg(feature = "multitenant")]
-mod auth0;
 mod core;
 #[cfg(feature = "log_requests")]
 mod debug_logs;
@@ -57,43 +49,12 @@ mod rocksdb;
 #[cfg(feature = "dynamodb")]
 mod dynamodb;
 
-#[cfg(not(feature = "multitenant"))]
-const SINGLE_TENANT_PROJECT_UUID: &str = "SINGLE_TENANT_PROJECT_UUID";
-
-#[cfg(not(feature = "multitenant"))]
-const SINGLE_TENANT_AUTHZ_ID: &str = "SINGLE_TENANT_AUTHZ_ID";
-
-#[cfg(feature = "multitenant")]
-#[derive(Deserialize)]
-struct GetIndexQuery {
-    project_uuid: String,
-}
-
 #[get("/indexes")]
 async fn get_indexes(
-    #[cfg(feature = "multitenant")] backend: Data<Backend>,
-    #[cfg(feature = "multitenant")] auth: Auth,
-    #[cfg(feature = "multitenant")] params: Query<GetIndexQuery>,
     metadata_db: Data<dyn MetadataDatabase>,
     indexes_db: Data<dyn IndexesDatabase>,
 ) -> Response<Vec<Index>> {
-    #[cfg(feature = "multitenant")]
-    {
-        let projects = BackendProject::get_projects(&backend, &auth).await?;
-
-        if !projects.contains(&BackendProject {
-            id: params.project_uuid.clone(),
-        }) {
-            return Err(Error::UnknownProject(params.project_uuid.clone()));
-        }
-    }
-
-    #[cfg(not(feature = "multitenant"))]
-    let project_uuid = SINGLE_TENANT_PROJECT_UUID;
-    #[cfg(feature = "multitenant")]
-    let project_uuid = &params.project_uuid;
-
-    let mut indexes = metadata_db.get_indexes(project_uuid).await?;
+    let mut indexes = metadata_db.get_indexes().await?;
     indexes_db.set_sizes(&mut indexes).await?;
 
     Ok(Json(indexes))
@@ -101,29 +62,14 @@ async fn get_indexes(
 
 #[derive(Deserialize)]
 struct PostNewIndex {
-    #[cfg(feature = "multitenant")]
-    project_uuid: String,
     name: String,
 }
 
 #[post("/indexes")]
 async fn post_indexes(
-    #[cfg(feature = "multitenant")] backend: Data<Backend>,
-    #[cfg(feature = "multitenant")] auth: Auth,
     body: Json<PostNewIndex>,
     metadata_db: Data<dyn MetadataDatabase>,
 ) -> Response<Index> {
-    #[cfg(feature = "multitenant")]
-    {
-        let projects = BackendProject::get_projects(&backend, &auth).await?;
-
-        if !projects.contains(&BackendProject {
-            id: body.project_uuid.clone(),
-        }) {
-            return Err(Error::UnknownProject(body.project_uuid.clone()));
-        }
-    }
-
     let mut rng = CsRng::from_entropy();
 
     let mut fetch_entries_key = vec![0; 16];
@@ -135,27 +81,15 @@ async fn post_indexes(
     let mut insert_chains_key = vec![0; 16];
     rng.fill_bytes(&mut insert_chains_key);
 
-    let public_id: String = rand::thread_rng()
+    let id: String = rand::thread_rng()
         .sample_iter(&Alphanumeric)
         .take(5)
         .map(char::from)
         .collect();
 
-    #[cfg(not(feature = "multitenant"))]
-    let authz_id = SINGLE_TENANT_AUTHZ_ID.to_string();
-    #[cfg(feature = "multitenant")]
-    let authz_id = auth.authz_id;
-
-    #[cfg(not(feature = "multitenant"))]
-    let project_uuid = SINGLE_TENANT_PROJECT_UUID;
-    #[cfg(feature = "multitenant")]
-    let project_uuid = &body.project_uuid;
-
     let index = metadata_db
         .create_index(NewIndex {
-            public_id,
-            authz_id,
-            project_uuid: project_uuid.to_string(),
+            id,
             name: body.name.clone(),
             fetch_entries_key,
             fetch_chains_key,
@@ -167,72 +101,47 @@ async fn post_indexes(
     Ok(Json(index))
 }
 
-#[get("/indexes/{public_id}")]
+#[get("/indexes/{id}")]
 async fn get_index(
-    #[cfg(feature = "multitenant")] auth: Auth,
-    public_id: Path<String>,
+    id: Path<String>,
     metadata_cache: Data<MetadataCache>,
     metadata_db: Data<dyn MetadataDatabase>,
     indexes_db: Data<dyn IndexesDatabase>,
 ) -> Response<Index> {
     let index = metadata_db
-        .get_index_with_cache(&metadata_cache, &public_id)
+        .get_index_with_cache(&metadata_cache, &id)
         .await?;
 
     if let Some(mut index) = index {
-        #[cfg(feature = "multitenant")]
-        if auth.authz_id != index.authz_id {
-            return Err(Error::BadRequest(format!(
-                "Unknown index for ID {public_id}"
-            )));
-        }
-
         indexes_db.set_size(&mut index).await?;
         Ok(Json(index))
     } else {
-        Err(Error::BadRequest(format!(
-            "Unknown index for ID {public_id}"
-        )))
+        Err(Error::BadRequest(format!("Unknown index for ID {id}")))
     }
 }
 
-#[delete("/indexes/{public_id}")]
+#[delete("/indexes/{id}")]
 async fn delete_index(
-    #[cfg(feature = "multitenant")] auth: Auth,
-    public_id: Path<String>,
+    id: Path<String>,
     metadata_cache: Data<MetadataCache>,
     metadata_db: Data<dyn MetadataDatabase>,
 ) -> Response<()> {
-    #[cfg(feature = "multitenant")]
-    {
-        let index = metadata_db
-            .get_index_with_cache(&metadata_cache, &public_id)
-            .await?;
-        if let Some(index) = index {
-            if auth.authz_id != index.authz_id {
-                return Err(Error::BadRequest(format!(
-                    "Unknown index for ID {public_id}"
-                )));
-            }
-        }
-    }
-
-    metadata_db.delete_index(&public_id).await?;
+    metadata_db.delete_index(&id).await?;
     if let Ok(mut cache) = metadata_cache.write() {
-        cache.remove(public_id.as_str());
+        cache.remove(id.as_str());
     }
 
     Ok(Json(()))
 }
 
-#[post("/indexes/{public_id}/fetch_entries")]
+#[post("/indexes/{id}/fetch_entries")]
 async fn fetch_entries(
     index: Index,
     bytes: Bytes,
     indexes: Data<dyn IndexesDatabase>,
     #[cfg(feature = "log_requests")] time_diff_mutex: DataTimeDiffInMillisecondsMutex,
 ) -> ResponseBytes {
-    let bytes = check_body_signature(bytes, &index.public_id, &index.fetch_entries_key)?;
+    let bytes = check_body_signature(bytes, &index.id, &index.fetch_entries_key)?;
     let uids = deserialize_set::<CoreError, Uid<UID_LENGTH>>(&bytes)?;
 
     #[cfg(feature = "log_requests")]
@@ -257,14 +166,14 @@ async fn fetch_entries(
         .body(bytes))
 }
 
-#[post("/indexes/{public_id}/fetch_chains")]
+#[post("/indexes/{id}/fetch_chains")]
 async fn fetch_chains(
     index: Index,
     bytes: Bytes,
     indexes: Data<dyn IndexesDatabase>,
     #[cfg(feature = "log_requests")] time_diff_mutex: DataTimeDiffInMillisecondsMutex,
 ) -> ResponseBytes {
-    let bytes = check_body_signature(bytes, &index.public_id, &index.fetch_chains_key)?;
+    let bytes = check_body_signature(bytes, &index.id, &index.fetch_chains_key)?;
     let uids = deserialize_set::<CoreError, Uid<UID_LENGTH>>(&bytes)?;
 
     #[cfg(feature = "log_requests")]
@@ -289,13 +198,13 @@ async fn fetch_chains(
         .body(bytes))
 }
 
-#[post("/indexes/{public_id}/upsert_entries")]
+#[post("/indexes/{id}/upsert_entries")]
 async fn upsert_entries(
     bytes: Bytes,
     index: Index,
     indexes: Data<dyn IndexesDatabase>,
 ) -> ResponseBytes {
-    let bytes = check_body_signature(bytes, &index.public_id, &index.upsert_entries_key)?;
+    let bytes = check_body_signature(bytes, &index.id, &index.upsert_entries_key)?;
     let data = UpsertData::<UID_LENGTH>::deserialize(&bytes)?;
 
     let rejected = indexes.upsert_entries(&index, data).await?;
@@ -309,13 +218,13 @@ async fn upsert_entries(
         .body(bytes))
 }
 
-#[post("/indexes/{public_id}/insert_chains")]
+#[post("/indexes/{id}/insert_chains")]
 async fn insert_chains(
     index: Index,
     bytes: Bytes,
     indexes: Data<dyn IndexesDatabase>,
 ) -> Response<()> {
-    let bytes = check_body_signature(bytes, &index.public_id, &index.insert_chains_key)?;
+    let bytes = check_body_signature(bytes, &index.id, &index.insert_chains_key)?;
     let data = EncryptedTable::<UID_LENGTH>::deserialize(&bytes)?;
 
     indexes.insert_chains(&index, data).await?;
@@ -338,12 +247,6 @@ async fn main() -> std::io::Result<()> {
 }
 
 async fn start_server(ipv6: bool) -> std::io::Result<()> {
-    #[cfg(feature = "multitenant")]
-    let auth0 = Data::new(Auth0::from_env());
-
-    #[cfg(feature = "multitenant")]
-    let backend = Data::new(Backend::from_env());
-
     let metadata_cache: Data<MetadataCache> = Data::new(Default::default());
 
     let indexes_database: Data<dyn IndexesDatabase> = match env::var("INDEXES_DATABASE_TYPE").as_deref().unwrap_or("rocksdb") {
@@ -399,12 +302,6 @@ async fn start_server(ipv6: bool) -> std::io::Result<()> {
             .service(fetch_chains)
             .service(upsert_entries)
             .service(insert_chains);
-
-        #[cfg(feature = "multitenant")]
-        {
-            app = app.app_data(auth0.clone());
-            app = app.app_data(backend.clone());
-        }
 
         #[cfg(feature = "log_requests")]
         {
