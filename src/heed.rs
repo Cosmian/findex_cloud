@@ -136,11 +136,6 @@ impl IndexesDatabase for Database {
 
         Ok(())
     }
-
-    #[cfg(feature = "log_requests")]
-    async fn fetch_all_as_json(&self, _index: &Index, _table: Table) -> Result<String, Error> {
-        todo!()
-    }
 }
 
 #[derive(Copy, Clone, Debug)]

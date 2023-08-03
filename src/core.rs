@@ -131,7 +131,9 @@ pub(crate) trait IndexesDatabase: Sync + Send {
     ) -> Result<(), Error>;
 
     #[cfg(feature = "log_requests")]
-    async fn fetch_all_as_json(&self, index: &Index, table: Table) -> Result<String, Error>;
+    async fn fetch_all_as_json(&self, _index: &Index, _table: Table) -> Result<String, Error> {
+        unimplemented!();
+    }
 }
 
 pub(crate) type MetadataCache = RwLock<HashMap<String, Index>>;
