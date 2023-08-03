@@ -34,9 +34,11 @@ use serde::Deserialize;
 use std::path::Path as FsPath;
 
 mod core;
+mod errors;
+
 #[cfg(feature = "log_requests")]
 mod debug_logs;
-mod errors;
+
 #[cfg(feature = "sqlite")]
 mod sqlite;
 
