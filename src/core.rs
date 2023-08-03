@@ -21,7 +21,7 @@ use cosmian_findex::{
     parameters::{KmacKey, UID_LENGTH},
     EncryptedTable, KeyingMaterial, Uid, UpsertData,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::errors::Error;
 
@@ -45,19 +45,6 @@ pub(crate) struct NewIndex {
     pub(crate) fetch_chains_key: Vec<u8>,
     pub(crate) upsert_entries_key: Vec<u8>,
     pub(crate) insert_chains_key: Vec<u8>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub(crate) struct UidAndValue {
-    pub(crate) uid: String,
-    pub(crate) value: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub(crate) struct UidAndOldAndNewValues {
-    pub(crate) uid: String,
-    pub(crate) old_value: Option<String>,
-    pub(crate) new_value: String,
 }
 
 #[allow(clippy::result_large_err)]
