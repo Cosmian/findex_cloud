@@ -58,6 +58,9 @@ pub struct Database {
     chains_table_name: String,
 }
 
+/// These values are determined by the DynamoDB API
+/// which accept batching but with a maximum number
+/// of elements.
 const DYNAMODB_MAX_READ_ELEMENTS: usize = 100;
 const DYNAMODB_MAX_WRITE_ELEMENTS: usize = 25;
 
@@ -87,6 +90,15 @@ impl Database {
             .unwrap_or_else(|_| "findex_cloud_entries".to_string());
         let chains_table_name = env::var("DYNAMODB_CHAINS_TABLE_NAME")
             .unwrap_or_else(|_| "findex_cloud_chains".to_string());
+
+        // Here we'll try to create the 3 DynamoDB tables.
+        // Note that we create all 3 tables even if the DynamoDB
+        // driver is only use for metadata only or indexes only
+        // We may add in the futur an option to disable the table
+        // creation.
+        // If we need different billing/networking configuration
+        // for our tables we can create them before starting Findex
+        // Cloud.
 
         try_create_table(
             client
@@ -560,6 +572,10 @@ fn extract_string(item: &HashMap<String, AttributeValue>, key: &str) -> Result<S
         .clone())
 }
 
+/// This function creates a table inside DynamoDB but do not crash
+/// if the table already exists (it crashes in all other errors).
+/// It allows the user to create the table with its own parameters before
+/// starting Findex Cloud
 fn try_create_table(
     response: Result<CreateTableOutput, SdkError<CreateTableError>>,
 ) -> Result<(), SdkError<CreateTableError>> {

@@ -33,6 +33,8 @@ pub(crate) struct Index {
     pub(crate) fetch_chains_key: Vec<u8>,
     pub(crate) upsert_entries_key: Vec<u8>,
     pub(crate) insert_chains_key: Vec<u8>,
+    /// In bytes, if `None` the size is not available (because it was too costly to
+    /// compute or because the driver doesn't support getting the size of the index).
     pub(crate) size: Option<i64>,
     pub(crate) created_at: NaiveDateTime,
 }
@@ -64,7 +66,7 @@ pub(crate) fn check_body_signature(
             ))
         })?;
 
-    let timestamp_bytes = bytes
+    let expiration_timestamp_bytes = bytes
         .next_chunk()
         .map_err(|_| Error::BadRequest(format!("Body of request is too small ({original_length} bytes), not enought bytes to read expiration timestamp.")))?;
 
@@ -74,13 +76,18 @@ pub(crate) fn check_body_signature(
         KeyingMaterial::<SIGNATURE_SEED_LENGTH>::deserialize(seed.to_vec().as_slice())?
             .derive_kmac_key::<CALLBACK_SIGNATURE_LENGTH>(index_id.as_bytes());
 
-    let signature_computed = kmac!(CALLBACK_SIGNATURE_LENGTH, &key, &timestamp_bytes, &data);
+    let signature_computed = kmac!(
+        CALLBACK_SIGNATURE_LENGTH,
+        &key,
+        &expiration_timestamp_bytes,
+        &data
+    );
 
     if signature_received != signature_computed {
         return Err(Error::InvalidSignature);
     }
 
-    let expiration_timestamp = u64::from_be_bytes(timestamp_bytes);
+    let expiration_timestamp = u64::from_be_bytes(expiration_timestamp_bytes);
     let current_timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map_err(|_| Error::BadRequest("SystemTime is before UNIX_EPOCH".to_owned()))?
@@ -101,6 +108,21 @@ pub(crate) enum Table {
 
 #[async_trait]
 pub(crate) trait IndexesDatabase: Sync + Send {
+    /// Set the size of the index inside the `Index` struct. Size is set in bytes.
+    /// The index struct is fetched from the `MetadataDatabase` but the
+    /// size is often known by the `IndexesDatabase`, this is why this function
+    /// is present inside this trait.
+    /// Not all drivers can implement this function. If the size is not set, the UI
+    /// will show N/A so it's not a problem.
+    /// This function is `set_size` and not `get_size` to be symetric with the `set_sizes`
+    /// function below. And `set_sizes` and not `get_sizes` because it is easier to directly
+    /// set the sizes than getting a `Vec` of sizes and then re-associate sizes with the `Vec`
+    /// of indexes.
+    async fn set_size(&self, indexes: &mut Index) -> Result<(), Error>;
+
+    /// See `set_size` function.
+    /// Some drivers could define a more optimized version to fetch multiple sizes at once
+    /// than fetching individual sizes one by one.
     async fn set_sizes(&self, indexes: &mut Vec<Index>) -> Result<(), Error> {
         for index in indexes {
             self.set_size(index).await?;
@@ -108,8 +130,6 @@ pub(crate) trait IndexesDatabase: Sync + Send {
 
         Ok(())
     }
-
-    async fn set_size(&self, indexes: &mut Index) -> Result<(), Error>;
 
     async fn fetch(
         &self,
