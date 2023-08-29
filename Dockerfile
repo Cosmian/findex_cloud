@@ -16,7 +16,7 @@ RUN touch data/database.sqlite
 RUN cargo install sqlx-cli && \
     cp .env.example .env && \
     sqlx database reset -y && \
-    cargo build --release --features heed,dynamodb && \
+    cargo build --release --features lmmd,dynamodb && \
     cd static/ && npm install && cd .. && \
     cp target/release/findex_cloud /usr/bin/findex_cloud
 

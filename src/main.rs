@@ -42,7 +42,7 @@ mod debug_logs;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 
-#[cfg(feature = "heed")]
+#[cfg(feature = "lmmd")]
 mod heed;
 
 #[cfg(feature = "rocksdb")]
@@ -252,10 +252,10 @@ async fn start_server(ipv6: bool) -> std::io::Result<()> {
     let metadata_cache: Data<MetadataCache> = Data::new(Default::default());
 
     let indexes_database: Data<dyn IndexesDatabase> = match env::var("INDEXES_DATABASE_TYPE").as_deref().unwrap_or("rocksdb") {
-            #[cfg(feature = "heed")]
-            "heed" => Data::from(Arc::new(crate::heed::Database::create()) as Arc<dyn IndexesDatabase>),
-            #[cfg(not(feature = "heed"))]
-            "heed" => panic!("Cannot load `INDEXES_DATABASE_TYPE=heed` because `findex_cloud` wasn't compiled with \"heed\" feature."),
+            #[cfg(feature = "lmmd")]
+            "lmmd" => Data::from(Arc::new(crate::heed::Database::create()) as Arc<dyn IndexesDatabase>),
+            #[cfg(not(feature = "lmmd"))]
+            "lmmd" => panic!("Cannot load `INDEXES_DATABASE_TYPE=lmmd` because `findex_cloud` wasn't compiled with \"lmmd\" feature."),
 
             #[cfg(feature = "rocksdb")]
             "rocksdb" => Data::from(Arc::new(crate::rocksdb::Database::create()) as Arc<dyn IndexesDatabase>),
@@ -267,7 +267,7 @@ async fn start_server(ipv6: bool) -> std::io::Result<()> {
             #[cfg(not(feature = "dynamodb"))]
             "dynamodb" => panic!("Cannot load `INDEXES_DATABASE_TYPE=dynamodb` because `findex_cloud` wasn't compiled with \"dynamodb\" feature."),
 
-            indexes_database_type => panic!("Unknown `INDEXES_DATABASE_TYPE` env variable `{indexes_database_type}` (please use `rocksdb`, `dynamodb` or `heed`)"),
+            indexes_database_type => panic!("Unknown `INDEXES_DATABASE_TYPE` env variable `{indexes_database_type}` (please use `rocksdb`, `dynamodb` or `lmmd`)"),
         };
 
     let metadata_database: Data<dyn MetadataDatabase> = match env::var("METADATA_DATABASE_TYPE").as_deref().unwrap_or("sqlite") {

@@ -27,7 +27,7 @@ pub enum Error {
 
     #[cfg(feature = "rocksdb")]
     Rocksdb(rocksdb::Error),
-    #[cfg(feature = "heed")]
+    #[cfg(feature = "lmmd")]
     Heed(heed::Error),
     #[cfg(feature = "dynamodb")]
     DynamoDb(String),
@@ -66,7 +66,7 @@ impl ResponseError for Error {
 
             #[cfg(feature = "rocksdb")]
             Self::Rocksdb(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(feature = "heed")]
+            #[cfg(feature = "lmmd")]
             Self::Heed(_) => StatusCode::INTERNAL_SERVER_ERROR,
 
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
@@ -88,7 +88,7 @@ impl From<rocksdb::Error> for Error {
     }
 }
 
-#[cfg(feature = "heed")]
+#[cfg(feature = "lmmd")]
 impl From<heed::Error> for Error {
     fn from(err: heed::Error) -> Self {
         Error::Heed(err)

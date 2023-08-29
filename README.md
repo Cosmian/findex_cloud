@@ -30,7 +30,8 @@ Index
 : An index contains the association from keywords to locations. An **instance** can contain multiple indexes. For example, on a single **instance** you can have a "Dev" index and a "Prod" index, or you can store a "User" index and a "Companies" index. Each index have a different Findex key and label.
 
 Metadata database
-: The metadata database stores the list of **indexes** with their names, authentification keys. Two drivers exists for the metadata database: SQLite and DynamoDB.
+: The metadata database stores the list of **indexes** with their names, authentification keys. Two implementations exists for the metadata database: [SQLite](https://www.sqlite.org/index.html) and [DynamoDB](https://aws.amazon.com/fr/dynamodb/).
 
 Indexes database
-: The indexes database stores the Findex entries and chains for all **indexes**. The Findex keys are prefixed with the **index** ID to be found.
+: The indexes database stores the Findex entries and chains for all **indexes**. The Findex keys are prefixed with the **index** ID to be found. Three implementations exists for the indexes database: [DynamoDB](https://aws.amazon.com/fr/dynamodb/), [RocksDB](https://rocksdb.org/) and [LMMD](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
+
