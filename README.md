@@ -32,7 +32,7 @@ See the [./src/rocksdb.rs](./src/rocksdb.rs) file.
 
 ### LMMD (indexes)
 
-See the [./src/heed.rs](./src/heed.rs) file (). `heed` is the name of the Rust implementations of LMMD.
+See the [./src/heed.rs](./src/heed.rs) file. `heed` is the name of the Rust implementation of LMMD.
 
 ## Setup
 
@@ -60,3 +60,7 @@ Some implementations require additional config values in environment databases. 
 ```bash
 AWS_ACCESS_KEY_ID=xxx AWS_SECRET_ACCESS_KEY=xxx AWS_REGION=eu-west-3 INDEXES_DATABASE_TYPE=dynamodb METADATA_DATABASE_TYPE=dynamodb cargo run --no-default-features --features dynamodb
 ```
+
+## `log_requests` feature
+
+This feature is only useful in development mode. It allows to log all requests done to Findex Cloud and store the requested values and the responses. We use these dump to attack the architecture and try to find the requested keywords as an insider. These informations don’t leak the requested keywords nor the stored indexes.
