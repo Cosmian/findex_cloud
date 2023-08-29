@@ -2,25 +2,6 @@
 
 This is a server to store encrypted indexes. See [the Cosmian documentation](https://docs.cosmian.com/cloudproof_encryption/encrypted_search/).
 
-## Setup
-
-```bash
-# Run it outside the folder since the SQLx CLI doesn’t build with the toolchain used by Findex Cloud
-cargo install sqlx-cli 
-
-# Inside the findex_cloud folder
-sqlx database setup
-cargo run
-```
-
-Visit [http://localhost:8080](http://localhost:8080)
-
-You can run the server with other databases, eg: with DynamoDB:
-
-```bash
-AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= AWS_REGION=eu-west-3 INDEXES_DATABASE_TYPE=dynamodb METADATA_DATABASE_TYPE=dynamodb cargo run --no-default-features --features dynamodb
-```
-
 ## Definitions
 
 Instance
@@ -52,3 +33,30 @@ See the [./src/rocksdb.rs](./src/rocksdb.rs) file.
 ### LMMD (indexes)
 
 See the [./src/heed.rs](./src/heed.rs) file (). `heed` is the name of the Rust implementations of LMMD.
+
+## Setup
+
+```bash
+# Run it outside the folder since the SQLx CLI doesn’t build with the toolchain used by Findex Cloud
+cargo install sqlx-cli 
+
+# Inside the findex_cloud folder
+sqlx database setup
+cargo run
+```
+
+Visit [http://localhost:8080](http://localhost:8080)
+
+## Configuration
+
+You can run Findex Cloud with different implementations. Rust features gate the different implementation (to allow building a "minimal" Findex Cloud with just the used implementation) but the binary inside the Docker is built with all the features for all the implementations. The default enabled features are SQLite for metadata and RocksDB for indexes (if you don’t want to use these you can disable default features with `--no-default-features`).
+
+After building Findex Cloud with the correct wanted features, you can choose the implementation for the metadata database and the indexes database at runtime with environment variables:
+- METADATA_DATABASE_TYPE
+- INDEXES_DATABASE_TYPE
+
+Some implementations require additional config values in environment databases. For exemple, to run with DynamoDB:
+
+```bash
+AWS_ACCESS_KEY_ID=xxx AWS_SECRET_ACCESS_KEY=xxx AWS_REGION=eu-west-3 INDEXES_DATABASE_TYPE=dynamodb METADATA_DATABASE_TYPE=dynamodb cargo run --no-default-features --features dynamodb
+```
