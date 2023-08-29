@@ -3,3 +3,4 @@
 .env
 /static/node_modules
 .cargo_check
+/.vscode
