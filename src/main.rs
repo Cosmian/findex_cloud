@@ -281,7 +281,7 @@ async fn start_server(ipv6: bool) -> std::io::Result<()> {
             #[cfg(not(feature = "dynamodb"))]
             "dynamodb" => panic!("Cannot load `METADATA_DATABASE_TYPE=dynamodb` because `findex_cloud` wasn't compiled with \"dynamodb\" feature."),
 
-            metadata_database_type => panic!("Unknown `METADATA_DATABASE_TYPE` env variable `{metadata_database_type}` (please use `sqlite`)"),
+            metadata_database_type => panic!("Unknown `METADATA_DATABASE_TYPE` env variable `{metadata_database_type}` (please use `sqlite` or `dynamodb`)"),
         };
 
     #[cfg(feature = "log_requests")]
