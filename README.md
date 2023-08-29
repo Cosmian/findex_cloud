@@ -35,3 +35,20 @@ Metadata database
 Indexes database
 : The indexes database stores the Findex entries and chains for all **indexes**. The Findex keys are prefixed with the **index** ID to be found. Three implementations exists for the indexes database: [DynamoDB](https://aws.amazon.com/fr/dynamodb/), [RocksDB](https://rocksdb.org/) and [LMMD](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
 
+## Implementations
+
+### SQLite (metadata)
+
+See the [./src/sqlite.rs](./src/sqlite.rs) file.
+
+### DynamoDB (metadata and indexes)
+
+See comment inside ̏the [./src/dynamodb.rs](./src/dynamodb.rs) file.
+
+### RocksDB (indexes)
+
+See the [./src/rocksdb.rs](./src/rocksdb.rs) file.
+
+### LMMD (indexes)
+
+See the [./src/heed.rs](./src/heed.rs) file (). `heed` is the name of the Rust implementations of LMMD.
