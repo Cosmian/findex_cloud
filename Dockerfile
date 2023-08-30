@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y curl build-essential clang && \
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get install -y nodejs
 
+RUN mkdir -p data
 RUN touch data/database.sqlite
 
 RUN cargo install sqlx-cli && \
@@ -41,7 +42,7 @@ COPY --from=builder /backend/static/ /backend/static/
 
 ENV DATABASE_URL=sqlite://data/database.sqlite
 
-RUN mkdir data
+RUN mkdir -p data
 RUN touch data/database.sqlite
 
 EXPOSE 8080
