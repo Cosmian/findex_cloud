@@ -10,7 +10,6 @@ RUN apt-get update && apt-get install -y curl build-essential clang && \
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get install -y nodejs
 
-RUN mkdir data
 RUN touch data/database.sqlite
 
 RUN cargo install sqlx-cli && \

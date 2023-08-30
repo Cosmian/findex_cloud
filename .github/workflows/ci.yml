@@ -16,7 +16,6 @@ jobs:
       - name: Migrate database
         run: |
           cp .env.example .env
-          mkdir data
           cargo install sqlx-cli --no-default-features --features sqlite,native-tls
           sqlx database create
           sqlx migrate run
