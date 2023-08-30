@@ -124,6 +124,7 @@ async fn get_index(
 
 #[delete("/indexes/{id}")]
 async fn delete_index(
+    // Here we take only the ID of the index because we don't need the full index info.
     id: Path<String>,
     metadata_cache: Data<MetadataCache>,
     metadata_db: Data<dyn MetadataDatabase>,
@@ -242,13 +243,19 @@ async fn main() -> std::io::Result<()> {
 
     env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
 
-    match start_server(true).await {
+    match start_server(Network::Ipv4AndIpv6).await {
         Ok(_) => Ok(()),
-        Err(_) => start_server(false).await,
+        Err(_) => start_server(Network::Ipv4Only).await,
     }
 }
 
-async fn start_server(ipv6: bool) -> std::io::Result<()> {
+#[derive(Clone, Copy, PartialEq)]
+enum Network {
+    Ipv4AndIpv6,
+    Ipv4Only,
+}
+
+async fn start_server(network: Network) -> std::io::Result<()> {
     let metadata_cache: Data<MetadataCache> = Data::new(Default::default());
 
     let indexes_database: Data<dyn IndexesDatabase> = match env::var("INDEXES_DATABASE_TYPE").as_deref().unwrap_or("rocksdb") {
@@ -321,7 +328,7 @@ async fn start_server(ipv6: bool) -> std::io::Result<()> {
     .bind(("0.0.0.0", 8080))?;
 
     // If IPv6 is not available do not bind it (for example inside Docker).
-    if ipv6 {
+    if network == Network::Ipv4AndIpv6 {
         server = server.bind("[::1]:8080")?;
     }
 
