@@ -4,7 +4,6 @@ FROM rust:bullseye AS builder
 
 WORKDIR /backend
 
-COPY ./ .
 
 RUN apt-get update && apt-get install -y curl build-essential clang && \
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
@@ -13,8 +12,13 @@ RUN apt-get update && apt-get install -y curl build-essential clang && \
 RUN mkdir -p data
 RUN touch data/database.sqlite
 
-RUN cargo install sqlx-cli && \
-    cp .env.example .env && \
+# We install sqlx-cli before copying to use the default Rust version and 
+# not the specified nightly inside rust-toolchain file (which doesn't work)
+RUN cargo install sqlx-cli
+
+COPY ./ .
+
+RUN cp .env.example .env && \
     sqlx database reset -y && \
     cargo build --release --features lmmd,dynamodb && \
     cd static/ && npm install && cd .. && \
