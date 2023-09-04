@@ -20,8 +20,8 @@ actix-web-httpauth = "0.8.0"
 alcoholic_jwt = { version = "4091.0.0", optional = true }
 chrono = { version = "0.4.23", features = ["serde"] }
 cosmian_crypto_core = "9.0.1"
-cosmian_findex = "4.0.3"
-cloudproof_findex = { version = "4.0.2", features = ["cloud"] }
+cosmian_findex = "5.0.1"
+cloudproof_findex = { version = "5.0.3", features = ["cloud"] }
 dotenv = "0.15.0"
 env_logger = "0.10.0"
 futures = "0.3.26"
